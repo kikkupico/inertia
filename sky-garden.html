@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sky Garden</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            touch-action: none;
+        }
+
+        body {
+            overflow: hidden;
+            font-family: 'Courier New', monospace;
+            background: linear-gradient(to bottom, #ffeaa7, #fab1a0, #a29bfe);
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #hud {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .stat {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 12px 20px;
+            border-radius: 20px;
+            color: #2d3436;
+            font-size: 16px;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-label {
+            font-size: 11px;
+            opacity: 0.6;
+            margin-bottom: 2px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-value {
+            font-size: 22px;
+            color: #6c5ce7;
+        }
+
+        #levelInfo {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px 60px;
+            border-radius: 30px;
+            text-align: center;
+            color: #2d3436;
+            z-index: 100;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+
+        #levelInfo h1 {
+            font-size: 48px;
+            margin-bottom: 15px;
+            color: #6c5ce7;
+        }
+
+        #levelInfo p {
+            font-size: 16px;
+            margin: 10px 0;
+            opacity: 0.8;
+            line-height: 1.6;
+        }
+
+        .btn {
+            padding: 15px 40px;
+            background: linear-gradient(135deg, #6c5ce7, #a29bfe);
+            border: none;
+            border-radius: 25px;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 20px 10px 0;
+            transition: all 0.3s;
+            pointer-events: all;
+            box-shadow: 0 4px 15px rgba(108, 92, 231, 0.3);
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        #startScreen {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.95);
+            padding: 50px;
+            border-radius: 30px;
+            text-align: center;
+            color: #2d3436;
+            z-index: 100;
+            max-width: 90%;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+
+        #startScreen h1 {
+            font-size: 56px;
+            margin-bottom: 20px;
+            color: #6c5ce7;
+            text-shadow: 2px 2px 0 #a29bfe;
+        }
+
+        #startScreen .subtitle {
+            font-size: 18px;
+            color: #fd79a8;
+            margin-bottom: 30px;
+        }
+
+        #startScreen .instructions {
+            text-align: left;
+            margin: 30px 0;
+            padding: 25px;
+            background: rgba(108, 92, 231, 0.1);
+            border-radius: 20px;
+            border-left: 4px solid #6c5ce7;
+        }
+
+        #startScreen .instructions h3 {
+            color: #6c5ce7;
+            margin-bottom: 15px;
+        }
+
+        #startScreen .instructions li {
+            margin: 12px 0;
+            list-style-position: inside;
+            line-height: 1.6;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        #controls {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            z-index: 10;
+        }
+
+        .control-btn {
+            width: 60px;
+            height: 60px;
+            background: rgba(255, 255, 255, 0.9);
+            border: none;
+            border-radius: 50%;
+            font-size: 24px;
+            cursor: pointer;
+            pointer-events: all;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            transition: all 0.2s;
+        }
+
+        .control-btn:active {
+            transform: scale(0.9);
+            background: rgba(255, 255, 255, 1);
+        }
+
+        #hint {
+            position: fixed;
+            bottom: 120px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px 25px;
+            border-radius: 20px;
+            color: #2d3436;
+            font-size: 14px;
+            z-index: 10;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        #hint.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="hud">
+        <div class="stat">
+            <div class="stat-label">Level</div>
+            <div class="stat-value" id="level">1</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Flowers</div>
+            <div class="stat-value" id="flowers">0/0</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Time</div>
+            <div class="stat-value" id="time">0s</div>
+        </div>
+    </div>
+
+    <div id="controls">
+        <button class="control-btn" id="resetBtn">↺</button>
+    </div>
+
+    <div id="hint"></div>
+
+    <div id="startScreen">
+        <h1>SKY GARDEN</h1>
+        <div class="subtitle">A Peaceful Isometric Adventure</div>
+        <div class="instructions">
+            <h3>How to Play:</h3>
+            <ul>
+                <li>Tilt your device to roll through floating gardens</li>
+                <li>Collect all flowers to open the goal</li>
+                <li>Step on switches to activate bridges</li>
+                <li>Use portals to teleport across gaps</li>
+                <li>Avoid falling off the edge!</li>
+                <li>Moving platforms require timing</li>
+            </ul>
+        </div>
+        <button class="btn" id="startBtn">Begin Journey</button>
+    </div>
+
+    <div id="levelInfo" class="hidden">
+        <h1 id="levelTitle">Level Complete!</h1>
+        <p id="levelMessage">You collected all the flowers!</p>
+        <p id="levelTime"></p>
+        <button class="btn" id="nextBtn">Next Level</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+
+        // Isometric constants
+        const TILE_WIDTH = 80;
+        const TILE_HEIGHT = 40;
+        const TILE_DEPTH = 20;
+
+        // Game state
+        let gameRunning = false;
+        let currentLevel = 0;
+        let flowersCollected = 0;
+        let totalFlowers = 0;
+        let startTime = 0;
+        let tiltX = 0;
+        let tiltY = 0;
+        let cameraOffsetX = 0;
+        let cameraOffsetY = 0;
+
+        // Player marble
+        const marble = {
+            x: 0,
+            y: 0,
+            z: 0.5,
+            vx: 0,
+            vy: 0,
+            radius: 0.3,
+            onPlatform: null
+        };
+
+        // Game objects
+        let platforms = [];
+        let flowers = [];
+        let switches = [];
+        let portals = [];
+        let movingPlatforms = [];
+        let bridges = [];
+        let goalTile = null;
+
+        // Level definitions
+        const levels = [
+            {
+                name: "Garden Path",
+                hint: "Tilt to roll and collect the flowers!",
+                platforms: [
+                    {x: 0, y: 0, type: 'start'},
+                    {x: 1, y: 0, type: 'grass'},
+                    {x: 2, y: 0, type: 'grass'},
+                    {x: 2, y: 1, type: 'grass'},
+                    {x: 2, y: 2, type: 'grass'},
+                    {x: 3, y: 2, type: 'goal'},
+                ],
+                flowers: [{x: 1, y: 0}, {x: 2, y: 1}],
+                switches: [],
+                portals: [],
+                moving: [],
+                bridges: []
+            },
+            {
+                name: "Bridge Builder",
+                hint: "Step on the switch to activate the bridge!",
+                platforms: [
+                    {x: 0, y: 0, type: 'start'},
+                    {x: 1, y: 0, type: 'grass'},
+                    {x: 1, y: 1, type: 'grass'},
+                    {x: 1, y: 2, type: 'switch', id: 'sw1'},
+                    {x: 4, y: 2, type: 'grass'},
+                    {x: 5, y: 2, type: 'grass'},
+                    {x: 5, y: 3, type: 'goal'},
+                ],
+                flowers: [{x: 1, y: 1}, {x: 5, y: 2}],
+                switches: [{x: 1, y: 2, id: 'sw1', controls: ['br1']}],
+                portals: [],
+                moving: [],
+                bridges: [
+                    {x: 2, y: 2, id: 'br1'},
+                    {x: 3, y: 2, id: 'br1'},
+                ]
+            },
+            {
+                name: "Portal Garden",
+                hint: "Use portals to teleport across space!",
+                platforms: [
+                    {x: 0, y: 0, type: 'start'},
+                    {x: 1, y: 0, type: 'portal', id: 'p1'},
+                    {x: 5, y: 3, type: 'portal', id: 'p1'},
+                    {x: 6, y: 3, type: 'grass'},
+                    {x: 6, y: 4, type: 'grass'},
+                    {x: 5, y: 4, type: 'goal'},
+                ],
+                flowers: [{x: 1, y: 0}, {x: 6, y: 3}],
+                switches: [],
+                portals: [{id: 'p1', tiles: [{x: 1, y: 0}, {x: 5, y: 3}]}],
+                moving: [],
+                bridges: []
+            },
+            {
+                name: "Moving Platforms",
+                hint: "Time your crossing with the moving platforms!",
+                platforms: [
+                    {x: 0, y: 0, type: 'start'},
+                    {x: 1, y: 0, type: 'grass'},
+                    {x: 4, y: 0, type: 'grass'},
+                    {x: 5, y: 0, type: 'grass'},
+                    {x: 5, y: 1, type: 'goal'},
+                ],
+                flowers: [{x: 1, y: 0}, {x: 4, y: 0}],
+                switches: [],
+                portals: [],
+                moving: [
+                    {startX: 2, startY: 0, endX: 3, endY: 0, speed: 0.01, id: 'm1'}
+                ],
+                bridges: []
+            },
+            {
+                name: "Master Garden",
+                hint: "Use everything you've learned!",
+                platforms: [
+                    {x: 0, y: 0, type: 'start'},
+                    {x: 1, y: 0, type: 'grass'},
+                    {x: 1, y: 1, type: 'switch', id: 'sw1'},
+                    {x: 1, y: 4, type: 'portal', id: 'p1'},
+                    {x: 5, y: 0, type: 'portal', id: 'p1'},
+                    {x: 6, y: 0, type: 'grass'},
+                    {x: 7, y: 0, type: 'grass'},
+                    {x: 7, y: 1, type: 'grass'},
+                    {x: 8, y: 1, type: 'goal'},
+                ],
+                flowers: [{x: 1, y: 0}, {x: 1, y: 1}, {x: 6, y: 0}, {x: 7, y: 1}],
+                switches: [{x: 1, y: 1, id: 'sw1', controls: ['br1']}],
+                portals: [{id: 'p1', tiles: [{x: 1, y: 4}, {x: 5, y: 0}]}],
+                moving: [
+                    {startX: 4, startY: 1, endX: 4, endY: 3, speed: 0.008, id: 'm1'}
+                ],
+                bridges: [
+                    {x: 1, y: 2, id: 'br1'},
+                    {x: 1, y: 3, id: 'br1'},
+                ]
+            }
+        ];
+
+        // Isometric projection
+        function isoToScreen(x, y, z = 0) {
+            const screenX = (x - y) * TILE_WIDTH / 2;
+            const screenY = (x + y) * TILE_HEIGHT / 2 - z * TILE_DEPTH;
+            return {
+                x: screenX + width / 2 + cameraOffsetX,
+                y: screenY + height / 3 + cameraOffsetY
+            };
+        }
+
+        // Draw isometric tile
+        function drawTile(x, y, z, color, topColor) {
+            const pos = isoToScreen(x, y, z);
+
+            // Top face
+            ctx.fillStyle = topColor || color;
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+            ctx.lineTo(pos.x + TILE_WIDTH / 2, pos.y + TILE_HEIGHT / 2);
+            ctx.lineTo(pos.x, pos.y + TILE_HEIGHT);
+            ctx.lineTo(pos.x - TILE_WIDTH / 2, pos.y + TILE_HEIGHT / 2);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Left face (depth)
+            if (z > 0) {
+                const depth = z * TILE_DEPTH;
+                ctx.fillStyle = shadeColor(color, -20);
+                ctx.beginPath();
+                ctx.moveTo(pos.x - TILE_WIDTH / 2, pos.y + TILE_HEIGHT / 2);
+                ctx.lineTo(pos.x, pos.y + TILE_HEIGHT);
+                ctx.lineTo(pos.x, pos.y + TILE_HEIGHT + depth);
+                ctx.lineTo(pos.x - TILE_WIDTH / 2, pos.y + TILE_HEIGHT / 2 + depth);
+                ctx.closePath();
+                ctx.fill();
+
+                // Right face (depth)
+                ctx.fillStyle = shadeColor(color, -30);
+                ctx.beginPath();
+                ctx.moveTo(pos.x + TILE_WIDTH / 2, pos.y + TILE_HEIGHT / 2);
+                ctx.lineTo(pos.x, pos.y + TILE_HEIGHT);
+                ctx.lineTo(pos.x, pos.y + TILE_HEIGHT + depth);
+                ctx.lineTo(pos.x + TILE_WIDTH / 2, pos.y + TILE_HEIGHT / 2 + depth);
+                ctx.closePath();
+                ctx.fill();
+            }
+        }
+
+        function shadeColor(color, percent) {
+            const num = parseInt(color.replace('#', ''), 16);
+            const amt = Math.round(2.55 * percent);
+            const R = Math.max(0, Math.min(255, (num >> 16) + amt));
+            const G = Math.max(0, Math.min(255, (num >> 8 & 0x00FF) + amt));
+            const B = Math.max(0, Math.min(255, (num & 0x0000FF) + amt));
+            return '#' + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
+        }
+
+        function drawFlower(x, y) {
+            const pos = isoToScreen(x, y, 0.3);
+
+            // Petals
+            const petalColors = ['#fd79a8', '#fdcb6e', '#ff7675', '#a29bfe'];
+            for (let i = 0; i < 6; i++) {
+                const angle = (Math.PI * 2 / 6) * i;
+                const px = pos.x + Math.cos(angle) * 8;
+                const py = pos.y + Math.sin(angle) * 8;
+
+                ctx.fillStyle = petalColors[i % petalColors.length];
+                ctx.beginPath();
+                ctx.arc(px, py, 6, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Center
+            ctx.fillStyle = '#ffeaa7';
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawMarble() {
+            const pos = isoToScreen(marble.x, marble.y, marble.z);
+
+            // Shadow
+            const shadowPos = isoToScreen(marble.x, marble.y, 0);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.beginPath();
+            ctx.ellipse(shadowPos.x, shadowPos.y + TILE_HEIGHT / 2, 12, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Marble gradient
+            const gradient = ctx.createRadialGradient(
+                pos.x - 5, pos.y - 5, 2,
+                pos.x, pos.y, 18
+            );
+            gradient.addColorStop(0, '#ffffff');
+            gradient.addColorStop(0.3, '#74b9ff');
+            gradient.addColorStop(1, '#0984e3');
+
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 18, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Highlight
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.beginPath();
+            ctx.arc(pos.x - 6, pos.y - 6, 5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function loadLevel(levelIndex) {
+            if (levelIndex >= levels.length) {
+                showVictoryScreen();
+                return;
+            }
+
+            const level = levels[levelIndex];
+            currentLevel = levelIndex;
+
+            platforms = [];
+            flowers = [];
+            switches = [];
+            portals = [];
+            movingPlatforms = [];
+            bridges = [];
+            goalTile = null;
+            flowersCollected = 0;
+            totalFlowers = level.flowers.length;
+
+            // Create platforms
+            level.platforms.forEach(p => {
+                const platform = {
+                    x: p.x,
+                    y: p.y,
+                    z: 0,
+                    type: p.type,
+                    id: p.id,
+                    active: p.type !== 'goal'
+                };
+
+                if (p.type === 'start') {
+                    marble.x = p.x;
+                    marble.y = p.y;
+                    marble.z = 0.5;
+                    marble.vx = 0;
+                    marble.vy = 0;
+                }
+
+                if (p.type === 'goal') {
+                    goalTile = platform;
+                }
+
+                platforms.push(platform);
+            });
+
+            // Create bridges
+            level.bridges.forEach(b => {
+                bridges.push({
+                    x: b.x,
+                    y: b.y,
+                    z: 0,
+                    id: b.id,
+                    active: false
+                });
+            });
+
+            // Create flowers
+            level.flowers.forEach(f => {
+                flowers.push({x: f.x, y: f.y, collected: false});
+            });
+
+            // Create switches
+            level.switches.forEach(s => {
+                switches.push({
+                    x: s.x,
+                    y: s.y,
+                    id: s.id,
+                    controls: s.controls,
+                    activated: false
+                });
+            });
+
+            // Create portals
+            level.portals.forEach(p => {
+                portals.push({
+                    id: p.id,
+                    tiles: p.tiles
+                });
+            });
+
+            // Create moving platforms
+            level.moving.forEach(m => {
+                movingPlatforms.push({
+                    x: m.startX,
+                    y: m.startY,
+                    startX: m.startX,
+                    startY: m.startY,
+                    endX: m.endX,
+                    endY: m.endY,
+                    speed: m.speed,
+                    progress: 0,
+                    id: m.id,
+                    z: 0
+                });
+            });
+
+            startTime = Date.now();
+            updateHUD();
+
+            // Show hint
+            const hint = document.getElementById('hint');
+            hint.textContent = level.hint;
+            hint.classList.add('show');
+            setTimeout(() => hint.classList.remove('show'), 4000);
+        }
+
+        function updateHUD() {
+            document.getElementById('level').textContent = (currentLevel + 1) + '/' + levels.length;
+            document.getElementById('flowers').textContent = flowersCollected + '/' + totalFlowers;
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            document.getElementById('time').textContent = elapsed + 's';
+        }
+
+        function checkPlatformCollision(x, y) {
+            // Check regular platforms
+            for (let p of platforms) {
+                if (p.active && Math.abs(p.x - x) < 0.4 && Math.abs(p.y - y) < 0.4) {
+                    return p;
+                }
+            }
+
+            // Check bridges
+            for (let b of bridges) {
+                if (b.active && Math.abs(b.x - x) < 0.4 && Math.abs(b.y - y) < 0.4) {
+                    return b;
+                }
+            }
+
+            // Check moving platforms
+            for (let m of movingPlatforms) {
+                if (Math.abs(m.x - x) < 0.4 && Math.abs(m.y - y) < 0.4) {
+                    return m;
+                }
+            }
+
+            return null;
+        }
+
+        function updateGame() {
+            if (!gameRunning) return;
+
+            // Apply tilt to velocity
+            marble.vx += tiltX * 0.003;
+            marble.vy += tiltY * 0.003;
+
+            // Friction
+            marble.vx *= 0.95;
+            marble.vy *= 0.95;
+
+            // Update position
+            marble.x += marble.vx;
+            marble.y += marble.vy;
+
+            // Gravity
+            marble.z -= 0.01;
+
+            // Check platform collision
+            const platform = checkPlatformCollision(marble.x, marble.y);
+
+            if (platform && marble.z <= 0.5) {
+                marble.z = 0.5;
+                marble.onPlatform = platform;
+
+                // Check for switch
+                if (platform.type === 'switch') {
+                    const sw = switches.find(s => s.x === platform.x && s.y === platform.y);
+                    if (sw && !sw.activated) {
+                        sw.activated = true;
+                        // Activate bridges
+                        sw.controls.forEach(controlId => {
+                            bridges.forEach(b => {
+                                if (b.id === controlId) b.active = true;
+                            });
+                        });
+                    }
+                }
+
+                // Check for portal
+                if (platform.type === 'portal') {
+                    const portal = portals.find(p => p.id === platform.id);
+                    if (portal) {
+                        const otherTile = portal.tiles.find(t => !(t.x === platform.x && t.y === platform.y));
+                        if (otherTile) {
+                            marble.x = otherTile.x;
+                            marble.y = otherTile.y;
+                            marble.vx *= 0.5;
+                            marble.vy *= 0.5;
+                        }
+                    }
+                }
+
+                // Check goal
+                if (platform === goalTile && platform.active) {
+                    levelComplete();
+                    return;
+                }
+
+            } else if (marble.z < -2) {
+                // Fell off
+                resetMarble();
+            }
+
+            // Collect flowers
+            flowers.forEach(f => {
+                if (!f.collected && Math.abs(f.x - marble.x) < 0.4 && Math.abs(f.y - marble.y) < 0.4) {
+                    f.collected = true;
+                    flowersCollected++;
+                    updateHUD();
+
+                    // Check if all flowers collected
+                    if (flowersCollected === totalFlowers && goalTile) {
+                        goalTile.active = true;
+                    }
+                }
+            });
+
+            // Update moving platforms
+            movingPlatforms.forEach(m => {
+                m.progress += m.speed;
+                if (m.progress > 1) m.progress = 0;
+
+                const t = Math.sin(m.progress * Math.PI * 2) * 0.5 + 0.5;
+                m.x = m.startX + (m.endX - m.startX) * t;
+                m.y = m.startY + (m.endY - m.startY) * t;
+            });
+
+            // Update camera to follow marble
+            const marbleScreen = isoToScreen(marble.x, marble.y, 0);
+            const targetOffsetX = width / 2 - (marbleScreen.x - cameraOffsetX);
+            const targetOffsetY = height / 2 - (marbleScreen.y - cameraOffsetY);
+
+            cameraOffsetX += (targetOffsetX - cameraOffsetX) * 0.05;
+            cameraOffsetY += (targetOffsetY - cameraOffsetY) * 0.05;
+
+            if (Math.random() < 0.1) updateHUD();
+        }
+
+        function resetMarble() {
+            const startPlatform = platforms.find(p => p.type === 'start');
+            if (startPlatform) {
+                marble.x = startPlatform.x;
+                marble.y = startPlatform.y;
+                marble.z = 0.5;
+                marble.vx = 0;
+                marble.vy = 0;
+            }
+        }
+
+        function levelComplete() {
+            gameRunning = false;
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+
+            document.getElementById('levelTitle').textContent =
+                currentLevel === levels.length - 1 ? 'All Gardens Complete!' : 'Level Complete!';
+            document.getElementById('levelMessage').textContent =
+                'You collected all ' + totalFlowers + ' flowers!';
+            document.getElementById('levelTime').textContent = 'Time: ' + elapsed + ' seconds';
+            document.getElementById('levelInfo').classList.remove('hidden');
+        }
+
+        function showVictoryScreen() {
+            document.getElementById('levelTitle').textContent = 'Congratulations!';
+            document.getElementById('levelMessage').textContent = 'You completed all the Sky Gardens!';
+            document.getElementById('levelTime').textContent = 'Thanks for playing!';
+            document.getElementById('nextBtn').textContent = 'Play Again';
+            document.getElementById('levelInfo').classList.remove('hidden');
+        }
+
+        function drawGame() {
+            // Clear
+            const gradient = ctx.createLinearGradient(0, 0, 0, height);
+            gradient.addColorStop(0, '#ffeaa7');
+            gradient.addColorStop(0.5, '#fab1a0');
+            gradient.addColorStop(1, '#a29bfe');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, width, height);
+
+            // Sort objects by depth for proper isometric rendering
+            const allObjects = [];
+
+            // Add platforms
+            platforms.forEach(p => {
+                allObjects.push({
+                    x: p.x, y: p.y, z: p.z,
+                    type: 'platform',
+                    data: p
+                });
+            });
+
+            // Add bridges
+            bridges.forEach(b => {
+                allObjects.push({
+                    x: b.x, y: b.y, z: b.z,
+                    type: 'bridge',
+                    data: b
+                });
+            });
+
+            // Add moving platforms
+            movingPlatforms.forEach(m => {
+                allObjects.push({
+                    x: m.x, y: m.y, z: m.z,
+                    type: 'moving',
+                    data: m
+                });
+            });
+
+            // Add flowers
+            flowers.forEach(f => {
+                if (!f.collected) {
+                    allObjects.push({
+                        x: f.x, y: f.y, z: 0.3,
+                        type: 'flower',
+                        data: f
+                    });
+                }
+            });
+
+            // Add marble
+            allObjects.push({
+                x: marble.x, y: marble.y, z: marble.z,
+                type: 'marble',
+                data: marble
+            });
+
+            // Sort by isometric depth
+            allObjects.sort((a, b) => {
+                const depthA = a.x + a.y - a.z;
+                const depthB = b.x + b.y - b.z;
+                return depthA - depthB;
+            });
+
+            // Draw all objects
+            allObjects.forEach(obj => {
+                if (obj.type === 'platform') {
+                    const p = obj.data;
+                    let color = '#55efc4';
+                    let topColor = '#81ecec';
+
+                    if (p.type === 'start') {
+                        color = '#74b9ff';
+                        topColor = '#a29bfe';
+                    } else if (p.type === 'goal') {
+                        color = p.active ? '#ffeaa7' : '#dfe6e9';
+                        topColor = p.active ? '#fdcb6e' : '#b2bec3';
+                    } else if (p.type === 'switch') {
+                        const sw = switches.find(s => s.x === p.x && s.y === p.y);
+                        color = sw && sw.activated ? '#00b894' : '#fd79a8';
+                        topColor = sw && sw.activated ? '#55efc4' : '#ff7675';
+                    } else if (p.type === 'portal') {
+                        color = '#6c5ce7';
+                        topColor = '#a29bfe';
+                    }
+
+                    drawTile(p.x, p.y, 0.2, color, topColor);
+                } else if (obj.type === 'bridge') {
+                    const b = obj.data;
+                    if (b.active) {
+                        drawTile(b.x, b.y, 0.15, '#95afc0', '#dfe6e9');
+                    }
+                } else if (obj.type === 'moving') {
+                    const m = obj.data;
+                    drawTile(m.x, m.y, 0.2, '#e17055', '#fab1a0');
+                } else if (obj.type === 'flower') {
+                    drawFlower(obj.data.x, obj.data.y);
+                } else if (obj.type === 'marble') {
+                    drawMarble();
+                }
+            });
+
+            requestAnimationFrame(drawGame);
+        }
+
+        function handleOrientation(event) {
+            if (!gameRunning) return;
+
+            if (event.beta !== null && event.gamma !== null) {
+                tiltX = event.gamma / 45;
+                tiltY = event.beta / 45;
+
+                tiltX = Math.max(-1, Math.min(1, tiltX));
+                tiltY = Math.max(-1, Math.min(1, tiltY));
+            }
+        }
+
+        async function requestSensorPermission() {
+            if (typeof DeviceOrientationEvent !== 'undefined' &&
+                typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const permission = await DeviceOrientationEvent.requestPermission();
+                    if (permission === 'granted') {
+                        window.addEventListener('deviceorientation', handleOrientation);
+                    }
+                } catch (error) {
+                    console.error('Error requesting sensor permission:', error);
+                }
+            } else {
+                window.addEventListener('deviceorientation', handleOrientation);
+            }
+        }
+
+        // Event listeners
+        document.getElementById('startBtn').addEventListener('click', async () => {
+            await requestSensorPermission();
+            document.getElementById('startScreen').classList.add('hidden');
+            loadLevel(0);
+            gameRunning = true;
+            setInterval(updateGame, 1000 / 60);
+            drawGame();
+        });
+
+        document.getElementById('nextBtn').addEventListener('click', () => {
+            document.getElementById('levelInfo').classList.add('hidden');
+            if (currentLevel === levels.length - 1) {
+                loadLevel(0);
+            } else {
+                loadLevel(currentLevel + 1);
+            }
+            gameRunning = true;
+        });
+
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            resetMarble();
+        });
+
+        // Desktop controls (for testing)
+        window.addEventListener('keydown', (e) => {
+            if (!gameRunning) return;
+            const speed = 0.2;
+            if (e.key === 'ArrowLeft') tiltX = -1;
+            else if (e.key === 'ArrowRight') tiltX = 1;
+            else if (e.key === 'ArrowUp') tiltY = -1;
+            else if (e.key === 'ArrowDown') tiltY = 1;
+            else if (e.key === 'r') resetMarble();
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.key.startsWith('Arrow')) {
+                tiltX = 0;
+                tiltY = 0;
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        });
+    </script>
+</body>
+</html>

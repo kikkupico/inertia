@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Inertia</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            touch-action: none;
+        }
+
+        body {
+            overflow: hidden;
+            font-family: 'Courier New', monospace;
+            background: #000;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #hud {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .stat {
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 20px;
+            border-radius: 5px;
+            color: #0f0;
+            font-size: 14px;
+            border: 1px solid #0f0;
+            text-shadow: 0 0 10px #0f0;
+        }
+
+        .stat-value {
+            font-size: 20px;
+        }
+
+        #startScreen {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 100;
+        }
+
+        #startScreen h1 {
+            font-size: 64px;
+            color: #0f0;
+            text-shadow: 0 0 30px #0f0, 0 0 60px #0f0;
+            margin-bottom: 20px;
+            letter-spacing: 15px;
+        }
+
+        #startScreen p {
+            color: #0a0;
+            font-size: 16px;
+            margin-bottom: 40px;
+        }
+
+        .btn {
+            padding: 15px 50px;
+            background: transparent;
+            border: 2px solid #0f0;
+            color: #0f0;
+            font-size: 18px;
+            font-family: 'Courier New', monospace;
+            cursor: pointer;
+            text-shadow: 0 0 10px #0f0;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+        }
+
+        .btn:active {
+            background: #0f0;
+            color: #000;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        #info {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            color: #0f0;
+            font-size: 12px;
+            z-index: 10;
+            pointer-events: none;
+            text-shadow: 0 0 10px #0f0;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="hud">
+        <div class="stat">
+            <span>TREASURES: </span>
+            <span class="stat-value" id="treasures">0</span>
+        </div>
+        <div class="stat">
+            <span>ALT: </span>
+            <span class="stat-value" id="altitude">0</span>
+        </div>
+    </div>
+
+    <div id="info">
+        <div>SPEED: <span id="speed">0</span></div>
+    </div>
+
+    <div id="startScreen">
+        <h1>INERTIA</h1>
+        <p>Tilt to navigate the terrain<br>Collect the golden treasures</p>
+        <button class="btn" id="startBtn">INITIALIZE</button>
+    </div>
+
+    <script>
+        // WebGL setup
+        const canvas = document.getElementById('gameCanvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+
+        if (!gl) {
+            alert('WebGL not supported');
+        }
+
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+        gl.viewport(0, 0, width, height);
+
+        // Shaders
+        const vertexShaderSource = `
+            attribute vec3 aPosition;
+            attribute vec3 aColor;
+            uniform mat4 uProjection;
+            uniform mat4 uView;
+            uniform mat4 uModel;
+            varying vec3 vColor;
+            varying float vDepth;
+
+            void main() {
+                vec4 worldPos = uModel * vec4(aPosition, 1.0);
+                vec4 viewPos = uView * worldPos;
+                gl_Position = uProjection * viewPos;
+                vColor = aColor;
+                vDepth = -viewPos.z;
+            }
+        `;
+
+        const fragmentShaderSource = `
+            precision mediump float;
+            varying vec3 vColor;
+            varying float vDepth;
+
+            void main() {
+                float fog = 1.0 - clamp(vDepth / 80.0, 0.0, 0.9);
+                gl_FragColor = vec4(vColor * fog, 1.0);
+            }
+        `;
+
+        function createShader(type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error(gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        function createProgram(vertexShader, fragmentShader) {
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error(gl.getProgramInfoLog(program));
+                gl.deleteProgram(program);
+                return null;
+            }
+            return program;
+        }
+
+        const vertexShader = createShader(gl.VERTEX_SHADER, vertexShaderSource);
+        const fragmentShader = createShader(gl.FRAGMENT_SHADER, fragmentShaderSource);
+        const program = createProgram(vertexShader, fragmentShader);
+
+        const aPosition = gl.getAttribLocation(program, 'aPosition');
+        const aColor = gl.getAttribLocation(program, 'aColor');
+        const uProjection = gl.getUniformLocation(program, 'uProjection');
+        const uView = gl.getUniformLocation(program, 'uView');
+        const uModel = gl.getUniformLocation(program, 'uModel');
+
+        // Matrix utilities
+        function perspective(fov, aspect, near, far) {
+            const f = 1.0 / Math.tan(fov / 2);
+            return new Float32Array([
+                f / aspect, 0, 0, 0,
+                0, f, 0, 0,
+                0, 0, (far + near) / (near - far), -1,
+                0, 0, (2 * far * near) / (near - far), 0
+            ]);
+        }
+
+        function lookAt(eye, target, up) {
+            const zAxis = normalize(subtract(eye, target));
+            const xAxis = normalize(cross(up, zAxis));
+            const yAxis = cross(zAxis, xAxis);
+
+            return new Float32Array([
+                xAxis[0], yAxis[0], zAxis[0], 0,
+                xAxis[1], yAxis[1], zAxis[1], 0,
+                xAxis[2], yAxis[2], zAxis[2], 0,
+                -dot(xAxis, eye), -dot(yAxis, eye), -dot(zAxis, eye), 1
+            ]);
+        }
+
+        function identity() {
+            return new Float32Array([
+                1, 0, 0, 0,
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1
+            ]);
+        }
+
+        function translate(m, tx, ty, tz) {
+            const result = new Float32Array(m);
+            result[12] = m[0] * tx + m[4] * ty + m[8] * tz + m[12];
+            result[13] = m[1] * tx + m[5] * ty + m[9] * tz + m[13];
+            result[14] = m[2] * tx + m[6] * ty + m[10] * tz + m[14];
+            return result;
+        }
+
+        function rotateX(m, angle) {
+            const c = Math.cos(angle);
+            const s = Math.sin(angle);
+            const result = new Float32Array(16);
+            result[0] = m[0]; result[1] = m[1]; result[2] = m[2]; result[3] = m[3];
+            result[4] = m[4]*c + m[8]*s; result[5] = m[5]*c + m[9]*s;
+            result[6] = m[6]*c + m[10]*s; result[7] = m[7]*c + m[11]*s;
+            result[8] = m[8]*c - m[4]*s; result[9] = m[9]*c - m[5]*s;
+            result[10] = m[10]*c - m[6]*s; result[11] = m[11]*c - m[7]*s;
+            result[12] = m[12]; result[13] = m[13]; result[14] = m[14]; result[15] = m[15];
+            return result;
+        }
+
+        function rotateY(m, angle) {
+            const c = Math.cos(angle);
+            const s = Math.sin(angle);
+            const result = new Float32Array(16);
+            result[0] = m[0]*c - m[8]*s; result[1] = m[1]*c - m[9]*s;
+            result[2] = m[2]*c - m[10]*s; result[3] = m[3]*c - m[11]*s;
+            result[4] = m[4]; result[5] = m[5]; result[6] = m[6]; result[7] = m[7];
+            result[8] = m[0]*s + m[8]*c; result[9] = m[1]*s + m[9]*c;
+            result[10] = m[2]*s + m[10]*c; result[11] = m[3]*s + m[11]*c;
+            result[12] = m[12]; result[13] = m[13]; result[14] = m[14]; result[15] = m[15];
+            return result;
+        }
+
+        function rotateZ(m, angle) {
+            const c = Math.cos(angle);
+            const s = Math.sin(angle);
+            const result = new Float32Array(16);
+            result[0] = m[0]*c + m[4]*s; result[1] = m[1]*c + m[5]*s;
+            result[2] = m[2]*c + m[6]*s; result[3] = m[3]*c + m[7]*s;
+            result[4] = m[4]*c - m[0]*s; result[5] = m[5]*c - m[1]*s;
+            result[6] = m[6]*c - m[2]*s; result[7] = m[7]*c - m[3]*s;
+            result[8] = m[8]; result[9] = m[9]; result[10] = m[10]; result[11] = m[11];
+            result[12] = m[12]; result[13] = m[13]; result[14] = m[14]; result[15] = m[15];
+            return result;
+        }
+
+        function subtract(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+        function cross(a, b) { return [a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2], a[0]*b[1] - a[1]*b[0]]; }
+        function dot(a, b) { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; }
+        function normalize(v) {
+            const len = Math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+            return [v[0]/len, v[1]/len, v[2]/len];
+        }
+
+        // Noise function for terrain - creates hills and valleys
+        function noise(x, y) {
+            let value = 0;
+            // Large rolling hills
+            value += Math.sin(x * 0.05) * Math.cos(y * 0.05) * 1.0;
+            // Medium features
+            value += Math.sin(x * 0.1 + y * 0.08) * 0.6;
+            value += Math.cos(x * 0.08 - y * 0.12) * 0.5;
+            // Small ripples
+            value += Math.sin(x * 0.2 + y * 0.15) * 0.3;
+            value += Math.cos(x * 0.15 + y * 0.2) * 0.2;
+            return value;
+        }
+
+        function getTerrainHeight(x, y) {
+            // Direct noise with significant height (range roughly -5 to +5)
+            return noise(x, y) * 2;
+        }
+
+        function getTerrainSlope(x, y) {
+            const delta = 0.5;
+            const hCenter = getTerrainHeight(x, y);
+            const hRight = getTerrainHeight(x + delta, y);
+            const hForward = getTerrainHeight(x, y + delta);
+            return {
+                x: (hRight - hCenter) / delta,
+                y: (hForward - hCenter) / delta
+            };
+        }
+
+        // Game state
+        let gameRunning = false;
+        let treasuresCollected = 0;
+        let tiltX = 0;
+        let tiltY = 0;
+        let calibrationGamma = 0;
+        let calibrationBeta = 45;
+
+        const player = {
+            x: 0,
+            y: 0,
+            z: 0,
+            vx: 0,
+            vy: 0,
+            rotationX: 0,
+            rotationY: 0,
+            radius: 0.5,
+            speed: 0
+        };
+
+        const camera = {
+            x: 0,
+            y: 0,
+            z: 0,
+            height: 3,
+            distance: 8,
+            lookAheadX: 0,
+            lookAheadY: 0,
+            dirX: 0,
+            dirY: 1 // Default facing forward
+        };
+
+        let treasures = [];
+
+        // Generate terrain mesh
+        const terrainSize = 60;
+        const terrainResolution = 80;
+        let terrainVertices = [];
+        let terrainColors = [];
+        let terrainBuffer, terrainColorBuffer;
+
+        function generateTerrain(offsetX, offsetY) {
+            terrainVertices = [];
+            terrainColors = [];
+
+            const step = terrainSize / terrainResolution;
+
+            // Snap to grid so terrain stays fixed in world space
+            const snapSize = step * 4;
+            const snappedOffsetX = Math.floor(offsetX / snapSize) * snapSize;
+            const snappedOffsetY = Math.floor(offsetY / snapSize) * snapSize;
+
+            for (let i = 0; i < terrainResolution; i++) {
+                for (let j = 0; j < terrainResolution; j++) {
+                    const x = (i - terrainResolution / 2) * step + snappedOffsetX;
+                    const y = (j - terrainResolution / 2) * step + snappedOffsetY;
+                    const h = getTerrainHeight(x, y);
+
+                    const x2 = x + step;
+                    const y2 = y + step;
+                    const h2 = getTerrainHeight(x2, y);
+                    const h3 = getTerrainHeight(x2, y2);
+                    const h4 = getTerrainHeight(x, y2);
+
+                    // Line 1: (x,y,h) to (x2,y,h2)
+                    terrainVertices.push(x, h, -y, x2, h2, -y);
+                    // Line 2: (x,y,h) to (x,y2,h4)
+                    terrainVertices.push(x, h, -y, x, h4, -y2);
+
+                    // Color based on height
+                    const brightness = 0.3 + (h + 4) / 8 * 0.7;
+                    for (let k = 0; k < 4; k++) {
+                        terrainColors.push(0, brightness, 0);
+                    }
+                }
+            }
+
+            terrainBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, terrainBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(terrainVertices), gl.DYNAMIC_DRAW);
+
+            terrainColorBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, terrainColorBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(terrainColors), gl.DYNAMIC_DRAW);
+        }
+
+        // Generate ring geometry
+        function createRing(radius, segments) {
+            const vertices = [];
+            for (let i = 0; i <= segments; i++) {
+                const angle1 = (i / segments) * Math.PI * 2;
+                const angle2 = ((i + 1) / segments) * Math.PI * 2;
+                vertices.push(
+                    Math.cos(angle1) * radius, Math.sin(angle1) * radius, 0,
+                    Math.cos(angle2) * radius, Math.sin(angle2) * radius, 0
+                );
+            }
+            return vertices;
+        }
+
+        const ringVertices = createRing(0.5, 32);
+        const ringBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, ringBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(ringVertices), gl.STATIC_DRAW);
+
+        const ringColors = [];
+        for (let i = 0; i < ringVertices.length / 3; i++) {
+            ringColors.push(0, 1, 0);
+        }
+        const ringColorBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, ringColorBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(ringColors), gl.STATIC_DRAW);
+
+        // Treasure geometry (diamond shape)
+        function createDiamond() {
+            return [
+                0, 0.4, 0,   0.2, 0, 0,
+                0.2, 0, 0,   0, -0.2, 0,
+                0, -0.2, 0,  -0.2, 0, 0,
+                -0.2, 0, 0,  0, 0.4, 0,
+                0, 0.4, 0,   0, 0, 0.2,
+                0, 0, 0.2,   0, -0.2, 0,
+                0, -0.2, 0,  0, 0, -0.2,
+                0, 0, -0.2,  0, 0.4, 0
+            ];
+        }
+
+        const diamondVertices = createDiamond();
+        const diamondBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, diamondBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(diamondVertices), gl.STATIC_DRAW);
+
+        const diamondColors = [];
+        for (let i = 0; i < diamondVertices.length / 3; i++) {
+            diamondColors.push(1, 0.84, 0);
+        }
+        const diamondColorBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, diamondColorBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(diamondColors), gl.STATIC_DRAW);
+
+        function spawnTreasure() {
+            if (treasures.filter(t => !t.collected).length < 5) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 10 + Math.random() * 20;
+                const x = player.x + Math.cos(angle) * dist;
+                const y = player.y + Math.sin(angle) * dist;
+                treasures.push({
+                    x: x,
+                    y: y,
+                    z: getTerrainHeight(x, y) + 1,
+                    collected: false,
+                    rotation: 0
+                });
+            }
+        }
+
+        function updatePlayer() {
+            const slope = getTerrainSlope(player.x, player.y);
+
+            player.vx += (tiltX * 0.02) - (slope.x * 0.03);
+            player.vy += (tiltY * 0.02) - (slope.y * 0.03);
+
+            const speed = Math.hypot(player.vx, player.vy);
+            const maxSpeed = 0.3;
+            if (speed > maxSpeed) {
+                player.vx = (player.vx / speed) * maxSpeed;
+                player.vy = (player.vy / speed) * maxSpeed;
+            }
+
+            player.vx *= 0.98;
+            player.vy *= 0.98;
+
+            player.x += player.vx;
+            player.y += player.vy;
+            player.z = getTerrainHeight(player.x, player.y) + player.radius;
+            player.speed = speed;
+
+            // Rotate rings based on TILT input
+            player.rotationX += tiltY * 0.1;
+            player.rotationY += tiltX * 0.1;
+
+            // Check treasure collision
+            for (const t of treasures) {
+                if (!t.collected) {
+                    const dist = Math.hypot(player.x - t.x, player.y - t.y);
+                    if (dist < 1.5) {
+                        t.collected = true;
+                        treasuresCollected++;
+                        document.getElementById('treasures').textContent = treasuresCollected;
+                    }
+                }
+            }
+
+            treasures = treasures.filter(t => t.collected || Math.hypot(t.x - player.x, t.y - player.y) < 50);
+
+            document.getElementById('altitude').textContent = player.z.toFixed(1);
+            document.getElementById('speed').textContent = speed.toFixed(2);
+        }
+
+        function updateCamera() {
+            camera.x += (player.x - camera.x) * 0.1;
+            camera.y += (player.y - camera.y) * 0.1;
+
+            // Dynamic camera based on speed (0 to maxSpeed 0.3)
+            const speedFactor = Math.min(player.speed / 0.3, 1); // 0 to 1
+
+            // Height: 2 when still, 6 when fast
+            const targetHeight = 2 + speedFactor * 4;
+            // Distance: 5 when still, 14 when fast
+            const targetDistance = 5 + speedFactor * 9;
+
+            // Smooth interpolation
+            camera.height += (targetHeight - camera.height) * 0.05;
+            camera.distance += (targetDistance - camera.distance) * 0.05;
+
+            camera.z = player.z + camera.height;
+
+            // Update camera direction based on velocity (smooth it out)
+            if (player.speed > 0.01) {
+                const targetDirX = player.vx / player.speed;
+                const targetDirY = player.vy / player.speed;
+                camera.dirX += (targetDirX - camera.dirX) * 0.05;
+                camera.dirY += (targetDirY - camera.dirY) * 0.05;
+            }
+
+            // Normalize direction
+            const dirLen = Math.hypot(camera.dirX, camera.dirY);
+            if (dirLen > 0.01) {
+                camera.dirX /= dirLen;
+                camera.dirY /= dirLen;
+            }
+
+            // Look-ahead point follows terrain
+            const lookDist = 8 + speedFactor * 6; // Look further when faster
+            camera.lookAheadX = player.x + camera.dirX * lookDist;
+            camera.lookAheadY = player.y + camera.dirY * lookDist;
+        }
+
+        function render() {
+            if (!gameRunning) {
+                requestAnimationFrame(render);
+                return;
+            }
+
+            updatePlayer();
+            updateCamera();
+            spawnTreasure();
+
+            // Regenerate terrain centered on player
+            generateTerrain(player.x, player.y);
+
+            gl.clearColor(0, 0, 0, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            gl.enable(gl.DEPTH_TEST);
+
+            gl.useProgram(program);
+
+            const aspect = width / height;
+            const projectionMatrix = perspective(Math.PI / 4, aspect, 0.1, 200);
+            gl.uniformMatrix4fv(uProjection, false, projectionMatrix);
+
+            // Camera positioned behind player based on movement direction
+            const camPosX = camera.x - camera.dirX * camera.distance;
+            const camPosY = camera.y - camera.dirY * camera.distance;
+            const eye = [camPosX, camera.z + 2, -camPosY];
+
+            // Look at terrain ahead in direction of travel
+            const lookAtZ = getTerrainHeight(camera.lookAheadX, camera.lookAheadY);
+            const target = [camera.lookAheadX, lookAtZ + 0.5, -camera.lookAheadY];
+            const up = [0, 1, 0];
+            const viewMatrix = lookAt(eye, target, up);
+            gl.uniformMatrix4fv(uView, false, viewMatrix);
+
+            // Draw terrain
+            let modelMatrix = identity();
+            gl.uniformMatrix4fv(uModel, false, modelMatrix);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, terrainBuffer);
+            gl.enableVertexAttribArray(aPosition);
+            gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, terrainColorBuffer);
+            gl.enableVertexAttribArray(aColor);
+            gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, 0);
+
+            gl.drawArrays(gl.LINES, 0, terrainVertices.length / 3);
+
+            // Draw player rings
+            // Ring 1 (horizontal - rotates with Y tilt)
+            modelMatrix = identity();
+            modelMatrix = translate(modelMatrix, player.x, player.z, -player.y);
+            modelMatrix = rotateX(modelMatrix, player.rotationX);
+            gl.uniformMatrix4fv(uModel, false, modelMatrix);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, ringBuffer);
+            gl.enableVertexAttribArray(aPosition);
+            gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, ringColorBuffer);
+            gl.enableVertexAttribArray(aColor);
+            gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, 0);
+
+            gl.drawArrays(gl.LINES, 0, ringVertices.length / 3);
+
+            // Ring 2 (vertical - rotates with X tilt)
+            modelMatrix = identity();
+            modelMatrix = translate(modelMatrix, player.x, player.z, -player.y);
+            modelMatrix = rotateY(modelMatrix, player.rotationY);
+            modelMatrix = rotateX(modelMatrix, Math.PI / 2);
+            gl.uniformMatrix4fv(uModel, false, modelMatrix);
+
+            gl.drawArrays(gl.LINES, 0, ringVertices.length / 3);
+
+            // Draw treasures
+            for (const t of treasures) {
+                if (t.collected) continue;
+
+                t.rotation += 0.02;
+
+                modelMatrix = identity();
+                modelMatrix = translate(modelMatrix, t.x, t.z + Math.sin(Date.now() * 0.003) * 0.3, -t.y);
+                modelMatrix = rotateY(modelMatrix, t.rotation);
+                gl.uniformMatrix4fv(uModel, false, modelMatrix);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, diamondBuffer);
+                gl.enableVertexAttribArray(aPosition);
+                gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, diamondColorBuffer);
+                gl.enableVertexAttribArray(aColor);
+                gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, 0);
+
+                gl.drawArrays(gl.LINES, 0, diamondVertices.length / 3);
+            }
+
+            requestAnimationFrame(render);
+        }
+
+        function handleOrientation(event) {
+            if (event.beta !== null && event.gamma !== null) {
+                if (!gameRunning) {
+                    calibrationGamma = event.gamma;
+                    calibrationBeta = event.beta;
+                    return;
+                }
+
+                tiltX = (event.gamma - calibrationGamma) / 35;
+                tiltY = -((event.beta - calibrationBeta) / 35);
+
+                tiltX = Math.max(-1, Math.min(1, tiltX));
+                tiltY = Math.max(-1, Math.min(1, tiltY));
+            }
+        }
+
+        async function requestSensorPermission() {
+            if (typeof DeviceOrientationEvent !== 'undefined' &&
+                typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const permission = await DeviceOrientationEvent.requestPermission();
+                    if (permission === 'granted') {
+                        window.addEventListener('deviceorientation', handleOrientation, true);
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                }
+            } else {
+                window.addEventListener('deviceorientation', handleOrientation, true);
+            }
+        }
+
+        function startGame() {
+            gameRunning = true;
+            treasuresCollected = 0;
+            player.x = 0;
+            player.y = 0;
+            player.vx = 0;
+            player.vy = 0;
+            player.rotationX = 0;
+            player.rotationY = 0;
+            treasures = [];
+
+            for (let i = 0; i < 5; i++) {
+                const angle = (i / 5) * Math.PI * 2;
+                const dist = 8 + Math.random() * 10;
+                const x = Math.cos(angle) * dist;
+                const y = Math.sin(angle) * dist;
+                treasures.push({
+                    x: x,
+                    y: y,
+                    z: getTerrainHeight(x, y) + 1,
+                    collected: false,
+                    rotation: 0
+                });
+            }
+
+            document.getElementById('treasures').textContent = '0';
+            document.getElementById('startScreen').classList.add('hidden');
+        }
+
+        document.getElementById('startBtn').addEventListener('click', async () => {
+            await requestSensorPermission();
+            startGame();
+        });
+
+        // Desktop controls
+        window.addEventListener('keydown', (e) => {
+            if (!gameRunning) return;
+            if (e.key === 'ArrowLeft') tiltX = -0.8;
+            else if (e.key === 'ArrowRight') tiltX = 0.8;
+            else if (e.key === 'ArrowUp') tiltY = 0.8;
+            else if (e.key === 'ArrowDown') tiltY = -0.8;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.key.startsWith('Arrow')) {
+                tiltX = 0;
+                tiltY = 0;
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            gl.viewport(0, 0, width, height);
+        });
+
+        // Start render loop
+        generateTerrain(0, 0);
+        render();
+    </script>
+</body>
+</html>

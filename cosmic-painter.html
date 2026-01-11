@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cosmic Painter</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            touch-action: none;
+        }
+
+        body {
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #000;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+        }
+
+        #ui {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            color: white;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        #title {
+            font-size: 28px;
+            font-weight: bold;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #ff6ec4, #7873f5, #4facfe);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        #instructions {
+            font-size: 14px;
+            opacity: 0.8;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+        }
+
+        #controls {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            z-index: 10;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 25px;
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s;
+            pointer-events: all;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        #permissionPrompt {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(30, 30, 50, 0.95);
+            padding: 40px;
+            border-radius: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            text-align: center;
+            color: white;
+            z-index: 100;
+            backdrop-filter: blur(20px);
+        }
+
+        #permissionPrompt h2 {
+            margin-bottom: 20px;
+            background: linear-gradient(45deg, #ff6ec4, #7873f5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        #permissionPrompt p {
+            margin-bottom: 30px;
+            opacity: 0.9;
+            line-height: 1.6;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui">
+        <div id="title">Cosmic Painter</div>
+        <div id="instructions">Tilt your device to control gravity • Tap to spawn particles • Shake to clear</div>
+    </div>
+
+    <div id="controls">
+        <button class="btn" id="clearBtn">Clear Canvas</button>
+        <button class="btn" id="colorBtn">Change Colors</button>
+    </div>
+
+    <div id="permissionPrompt" class="hidden">
+        <h2>Welcome to Cosmic Painter!</h2>
+        <p>This game uses your device's motion sensors to create beautiful particle art.</p>
+        <p>Tilt your device to control gravity and watch the colors flow!</p>
+        <button class="btn" id="startBtn">Start Painting</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const permissionPrompt = document.getElementById('permissionPrompt');
+        const startBtn = document.getElementById('startBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const colorBtn = document.getElementById('colorBtn');
+
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+
+        // Particle system
+        const particles = [];
+        const maxParticles = 300;
+        let gravityX = 0;
+        let gravityY = 0.5;
+
+        // Color palettes
+        const colorPalettes = [
+            ['#ff6ec4', '#7873f5', '#4facfe', '#00f2fe'],
+            ['#fa709a', '#fee140', '#30cfd0', '#a8edea'],
+            ['#ff9a56', '#ff6a88', '#ffecd2', '#fcb69f'],
+            ['#a8ff78', '#78ffd6', '#667eea', '#764ba2'],
+            ['#fbc2eb', '#a6c1ee', '#f093fb', '#f5576c']
+        ];
+        let currentPaletteIndex = 0;
+        let currentPalette = colorPalettes[currentPaletteIndex];
+
+        // Shake detection
+        let lastX = 0, lastY = 0, lastZ = 0;
+        let shakeThreshold = 25;
+
+        class Particle {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 4;
+                this.vy = (Math.random() - 0.5) * 4;
+                this.radius = Math.random() * 3 + 2;
+                this.color = currentPalette[Math.floor(Math.random() * currentPalette.length)];
+                this.life = 1;
+                this.decay = Math.random() * 0.002 + 0.001;
+                this.bounce = 0.7;
+                this.trail = [];
+                this.maxTrailLength = 15;
+            }
+
+            update() {
+                // Apply gravity
+                this.vx += gravityX;
+                this.vy += gravityY;
+
+                // Apply damping
+                this.vx *= 0.99;
+                this.vy *= 0.99;
+
+                // Update position
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Store trail
+                this.trail.push({ x: this.x, y: this.y });
+                if (this.trail.length > this.maxTrailLength) {
+                    this.trail.shift();
+                }
+
+                // Bounce off walls
+                if (this.x - this.radius < 0) {
+                    this.x = this.radius;
+                    this.vx *= -this.bounce;
+                } else if (this.x + this.radius > width) {
+                    this.x = width - this.radius;
+                    this.vx *= -this.bounce;
+                }
+
+                if (this.y - this.radius < 0) {
+                    this.y = this.radius;
+                    this.vy *= -this.bounce;
+                } else if (this.y + this.radius > height) {
+                    this.y = height - this.radius;
+                    this.vy *= -this.bounce;
+                }
+
+                // Decay
+                this.life -= this.decay;
+            }
+
+            draw() {
+                // Draw trail
+                for (let i = 0; i < this.trail.length; i++) {
+                    const point = this.trail[i];
+                    const alpha = (i / this.trail.length) * this.life * 0.3;
+                    const size = (i / this.trail.length) * this.radius;
+
+                    ctx.fillStyle = this.color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+                    ctx.beginPath();
+                    ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // Draw particle with glow
+                const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius * 2);
+                gradient.addColorStop(0, this.color + Math.floor(this.life * 255).toString(16).padStart(2, '0'));
+                gradient.addColorStop(0.5, this.color + Math.floor(this.life * 180).toString(16).padStart(2, '0'));
+                gradient.addColorStop(1, this.color + '00');
+
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius * 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            isDead() {
+                return this.life <= 0;
+            }
+        }
+
+        function addParticles(x, y, count = 5) {
+            for (let i = 0; i < count; i++) {
+                if (particles.length < maxParticles) {
+                    particles.push(new Particle(x, y));
+                }
+            }
+        }
+
+        function animate() {
+            // Fade effect for trails
+            ctx.fillStyle = 'rgba(10, 10, 26, 0.1)';
+            ctx.fillRect(0, 0, width, height);
+
+            // Update and draw particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update();
+                particles[i].draw();
+
+                if (particles[i].isDead()) {
+                    particles.splice(i, 1);
+                }
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        function handleOrientation(event) {
+            if (event.beta !== null && event.gamma !== null) {
+                // beta: front-back tilt (-180 to 180)
+                // gamma: left-right tilt (-90 to 90)
+
+                gravityX = (event.gamma / 90) * 0.8;
+                gravityY = (event.beta / 180) * 0.8;
+
+                // Clamp values
+                gravityX = Math.max(-1, Math.min(1, gravityX));
+                gravityY = Math.max(-1, Math.min(1, gravityY));
+            }
+        }
+
+        function handleMotion(event) {
+            if (event.accelerationIncludingGravity) {
+                const { x, y, z } = event.accelerationIncludingGravity;
+
+                if (x !== null && y !== null && z !== null) {
+                    // Detect shake
+                    const deltaX = Math.abs(x - lastX);
+                    const deltaY = Math.abs(y - lastY);
+                    const deltaZ = Math.abs(z - lastZ);
+
+                    if (deltaX > shakeThreshold || deltaY > shakeThreshold || deltaZ > shakeThreshold) {
+                        clearCanvas();
+                        // Create particle burst
+                        for (let i = 0; i < 20; i++) {
+                            addParticles(Math.random() * width, Math.random() * height, 1);
+                        }
+                    }
+
+                    lastX = x;
+                    lastY = y;
+                    lastZ = z;
+                }
+            }
+        }
+
+        function clearCanvas() {
+            particles.length = 0;
+            ctx.fillStyle = '#0a0a1a';
+            ctx.fillRect(0, 0, width, height);
+        }
+
+        function changeColorPalette() {
+            currentPaletteIndex = (currentPaletteIndex + 1) % colorPalettes.length;
+            currentPalette = colorPalettes[currentPaletteIndex];
+        }
+
+        async function requestSensorPermission() {
+            if (typeof DeviceOrientationEvent !== 'undefined' &&
+                typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const permission = await DeviceOrientationEvent.requestPermission();
+                    if (permission === 'granted') {
+                        window.addEventListener('deviceorientation', handleOrientation);
+                        window.addEventListener('devicemotion', handleMotion);
+                    }
+                } catch (error) {
+                    console.error('Error requesting sensor permission:', error);
+                }
+            } else {
+                // Non-iOS devices
+                window.addEventListener('deviceorientation', handleOrientation);
+                window.addEventListener('devicemotion', handleMotion);
+            }
+        }
+
+        // Event listeners
+        startBtn.addEventListener('click', async () => {
+            await requestSensorPermission();
+            permissionPrompt.classList.add('hidden');
+            animate();
+
+            // Add some initial particles
+            for (let i = 0; i < 10; i++) {
+                setTimeout(() => {
+                    addParticles(width / 2, height / 2, 5);
+                }, i * 100);
+            }
+        });
+
+        clearBtn.addEventListener('click', clearCanvas);
+        colorBtn.addEventListener('click', changeColorPalette);
+
+        canvas.addEventListener('click', (e) => {
+            addParticles(e.clientX, e.clientY, 8);
+        });
+
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            for (let touch of e.touches) {
+                addParticles(touch.clientX, touch.clientY, 5);
+            }
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            for (let touch of e.touches) {
+                addParticles(touch.clientX, touch.clientY, 3);
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        });
+
+        // Show permission prompt on load
+        permissionPrompt.classList.remove('hidden');
+    </script>
+</body>
+</html>

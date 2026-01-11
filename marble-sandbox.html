@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Marble Sandbox</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            touch-action: none;
+        }
+
+        body {
+            overflow: hidden;
+            font-family: 'Courier New', monospace;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #hud {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .stat {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 12px 20px;
+            border-radius: 20px;
+            color: #2d3436;
+            font-size: 16px;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .stat-label {
+            font-size: 11px;
+            opacity: 0.6;
+            margin-bottom: 2px;
+            text-transform: uppercase;
+        }
+
+        .stat-value {
+            font-size: 22px;
+            color: #6c5ce7;
+        }
+
+        #tiltIndicator {
+            position: fixed;
+            bottom: 30px;
+            left: 30px;
+            width: 120px;
+            height: 120px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 50%;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        #tiltDot {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            background: #6c5ce7;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            transition: all 0.1s;
+            box-shadow: 0 2px 10px rgba(108, 92, 231, 0.5);
+        }
+
+        #tiltLabel {
+            position: absolute;
+            bottom: -35px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        #debugInfo {
+            position: fixed;
+            top: 100px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #0f0;
+            padding: 10px;
+            border-radius: 10px;
+            font-family: monospace;
+            font-size: 11px;
+            z-index: 10;
+            pointer-events: none;
+            line-height: 1.5;
+        }
+
+        #controls {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            z-index: 10;
+        }
+
+        .control-btn {
+            padding: 12px 20px;
+            background: rgba(255, 255, 255, 0.95);
+            border: none;
+            border-radius: 20px;
+            color: #2d3436;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            pointer-events: all;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            transition: all 0.2s;
+        }
+
+        .control-btn:active {
+            transform: scale(0.95);
+            background: white;
+        }
+
+        #startScreen {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 100;
+        }
+
+        .btn {
+            padding: 20px 50px;
+            background: linear-gradient(135deg, #6c5ce7, #a29bfe);
+            border: none;
+            border-radius: 30px;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            pointer-events: all;
+            box-shadow: 0 8px 25px rgba(108, 92, 231, 0.5);
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        #instructions {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.98);
+            padding: 40px;
+            border-radius: 25px;
+            text-align: center;
+            color: #2d3436;
+            z-index: 100;
+            max-width: 400px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        #instructions h2 {
+            color: #6c5ce7;
+            margin-bottom: 20px;
+        }
+
+        #instructions p {
+            margin: 15px 0;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="hud">
+        <div class="stat">
+            <div class="stat-label">Score</div>
+            <div class="stat-value" id="score">0</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Combos</div>
+            <div class="stat-value" id="combos">0</div>
+        </div>
+    </div>
+
+    <div id="tiltIndicator">
+        <div id="tiltDot"></div>
+        <div id="tiltLabel">TILT</div>
+    </div>
+
+    <div id="debugInfo">
+        Gamma: --<br>
+        Beta: --<br>
+        TiltX: --<br>
+        TiltY: --<br>
+        Events: 0
+    </div>
+
+    <div id="controls">
+        <button class="control-btn" id="addDominoBtn">+ Dominoes</button>
+        <button class="control-btn" id="addMarbleBtn">+ Marble</button>
+        <button class="control-btn" id="resetBtn">Reset All</button>
+        <button class="control-btn" id="helpBtn">?</button>
+    </div>
+
+    <div id="startScreen">
+        <button class="btn" id="startBtn">Start Playing</button>
+    </div>
+
+    <div id="instructions" class="hidden">
+        <h2>How It Works</h2>
+        <p><strong>The tilt indicator (bottom left)</strong> shows which way gravity is pulling.</p>
+        <p>When you tilt your device <strong>forward</strong>, the dot moves <strong>up</strong> and your marble rolls <strong>forward</strong>.</p>
+        <p>The marble always rolls in the direction gravity is pulling!</p>
+        <p>Try tilting slowly to get a feel for it.</p>
+        <button class="btn" onclick="document.getElementById('instructions').classList.add('hidden')">Got It!</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+
+        // Isometric constants
+        const TILE_WIDTH = 60;
+        const TILE_HEIGHT = 30;
+        const TILE_DEPTH = 15;
+
+        // Game state
+        let gameRunning = false;
+        let score = 0;
+        let combos = 0;
+        let tiltX = 0;
+        let tiltY = 0;
+        let orientationEventCount = 0;
+        let updateLoopCount = 0;
+
+        // Player marble
+        const playerMarble = {
+            x: 0,
+            y: 0,
+            z: 0.4,
+            vx: 0,
+            vy: 0,
+            radius: 0.35,
+            color: '#0984e3',
+            trail: [],
+
+            update: function(gravity = true) {
+                if (gravity) {
+                    this.vx += tiltX * 0.015;
+                    this.vy += tiltY * 0.015;
+                }
+
+                this.vx *= 0.98;
+                this.vy *= 0.98;
+
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Wall collision
+                const margin = this.radius;
+                if (this.x < arena.x + margin) {
+                    this.x = arena.x + margin;
+                    this.vx *= -0.7;
+                }
+                if (this.x > arena.x + arena.width - margin) {
+                    this.x = arena.x + arena.width - margin;
+                    this.vx *= -0.7;
+                }
+                if (this.y < arena.y + margin) {
+                    this.y = arena.y + margin;
+                    this.vy *= -0.7;
+                }
+                if (this.y > arena.y + arena.height - margin) {
+                    this.y = arena.y + arena.height - margin;
+                    this.vy *= -0.7;
+                }
+
+                // Trail
+                if (Math.abs(this.vx) > 0.01 || Math.abs(this.vy) > 0.01) {
+                    this.trail.push({x: this.x, y: this.y, life: 1});
+                }
+
+                for (let i = this.trail.length - 1; i >= 0; i--) {
+                    this.trail[i].life -= 0.02;
+                    if (this.trail[i].life <= 0) {
+                        this.trail.splice(i, 1);
+                    }
+                }
+            },
+
+            draw: function() {
+                // Draw trail
+                for (let i = 0; i < this.trail.length; i++) {
+                    const t = this.trail[i];
+                    const pos = isoToScreen(t.x, t.y, 0.05);
+                    const alpha = Math.floor(t.life * 100);
+                    ctx.fillStyle = this.color + alpha.toString(16).padStart(2, '0');
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // Shadow
+                const shadowPos = isoToScreen(this.x, this.y, 0);
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.beginPath();
+                ctx.ellipse(shadowPos.x, shadowPos.y, 14, 7, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Marble
+                const pos = isoToScreen(this.x, this.y, this.z);
+                const gradient = ctx.createRadialGradient(
+                    pos.x - 6, pos.y - 6, 2,
+                    pos.x, pos.y, 18
+                );
+                gradient.addColorStop(0, '#ffffff');
+                gradient.addColorStop(0.4, this.color);
+                gradient.addColorStop(1, shadeColor(this.color, -30));
+
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, 18, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Highlight
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                ctx.beginPath();
+                ctx.arc(pos.x - 7, pos.y - 7, 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        };
+
+        // Arena
+        const ARENA_SIZE = 12;
+        const arena = {
+            x: -ARENA_SIZE / 2,
+            y: -ARENA_SIZE / 2,
+            width: ARENA_SIZE,
+            height: ARENA_SIZE
+        };
+
+        // Game objects
+        let marbles = [];
+        let dominoes = [];
+        let bumpers = [];
+        let gems = [];
+        let particles = [];
+
+        // Isometric projection
+        function isoToScreen(x, y, z = 0) {
+            const screenX = (x - y) * TILE_WIDTH / 2;
+            const screenY = (x + y) * TILE_HEIGHT / 2 - z * TILE_DEPTH * 3;
+            return {
+                x: screenX + width / 2,
+                y: screenY + height / 2.5
+            };
+        }
+
+        // Draw isometric tile
+        function drawTile(x, y, z, width, height, color, outlineColor = 'rgba(0,0,0,0.2)') {
+            const pos = isoToScreen(x, y, z);
+            const w = width;
+            const h = height;
+
+            // Top face
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+            ctx.lineTo(pos.x + w * TILE_WIDTH / 2, pos.y + h * TILE_HEIGHT / 2);
+            ctx.lineTo(pos.x + (w - h) * TILE_WIDTH / 2, pos.y + (w + h) * TILE_HEIGHT / 2);
+            ctx.lineTo(pos.x - h * TILE_WIDTH / 2, pos.y + h * TILE_HEIGHT / 2);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = outlineColor;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // Draw isometric box with depth
+        function drawBox(x, y, z, w, h, d, color) {
+            const pos = isoToScreen(x, y, z);
+
+            // Top face
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+            ctx.lineTo(pos.x + w * TILE_WIDTH / 2, pos.y + w * TILE_HEIGHT / 2);
+            ctx.lineTo(pos.x, pos.y + (w + h) * TILE_HEIGHT / 2);
+            ctx.lineTo(pos.x - h * TILE_WIDTH / 2, pos.y + h * TILE_HEIGHT / 2);
+            ctx.closePath();
+            ctx.fill();
+
+            // Right face
+            ctx.fillStyle = shadeColor(color, -15);
+            ctx.beginPath();
+            ctx.moveTo(pos.x + w * TILE_WIDTH / 2, pos.y + w * TILE_HEIGHT / 2);
+            ctx.lineTo(pos.x + w * TILE_WIDTH / 2, pos.y + w * TILE_HEIGHT / 2 + d * TILE_DEPTH);
+            ctx.lineTo(pos.x, pos.y + (w + h) * TILE_HEIGHT / 2 + d * TILE_DEPTH);
+            ctx.lineTo(pos.x, pos.y + (w + h) * TILE_HEIGHT / 2);
+            ctx.closePath();
+            ctx.fill();
+
+            // Left face
+            ctx.fillStyle = shadeColor(color, -30);
+            ctx.beginPath();
+            ctx.moveTo(pos.x - h * TILE_WIDTH / 2, pos.y + h * TILE_HEIGHT / 2);
+            ctx.lineTo(pos.x, pos.y + (w + h) * TILE_HEIGHT / 2);
+            ctx.lineTo(pos.x, pos.y + (w + h) * TILE_HEIGHT / 2 + d * TILE_DEPTH);
+            ctx.lineTo(pos.x - h * TILE_WIDTH / 2, pos.y + h * TILE_HEIGHT / 2 + d * TILE_DEPTH);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function shadeColor(color, percent) {
+            const num = parseInt(color.replace('#', ''), 16);
+            const amt = Math.round(2.55 * percent);
+            const R = Math.max(0, Math.min(255, (num >> 16) + amt));
+            const G = Math.max(0, Math.min(255, (num >> 8 & 0x00FF) + amt));
+            const B = Math.max(0, Math.min(255, (num & 0x0000FF) + amt));
+            return '#' + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
+        }
+
+        class Marble {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.z = 0.4;
+                this.vx = 0;
+                this.vy = 0;
+                this.radius = 0.35;
+                this.color = color;
+                this.trail = [];
+            }
+
+            update(gravity = true) {
+                if (gravity) {
+                    this.vx += tiltX * 0.015;
+                    this.vy += tiltY * 0.015;
+                }
+
+                this.vx *= 0.98;
+                this.vy *= 0.98;
+
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Wall collision
+                const margin = this.radius;
+                if (this.x < arena.x + margin) {
+                    this.x = arena.x + margin;
+                    this.vx *= -0.7;
+                }
+                if (this.x > arena.x + arena.width - margin) {
+                    this.x = arena.x + arena.width - margin;
+                    this.vx *= -0.7;
+                }
+                if (this.y < arena.y + margin) {
+                    this.y = arena.y + margin;
+                    this.vy *= -0.7;
+                }
+                if (this.y > arena.y + arena.height - margin) {
+                    this.y = arena.y + arena.height - margin;
+                    this.vy *= -0.7;
+                }
+
+                // Trail
+                if (Math.abs(this.vx) > 0.01 || Math.abs(this.vy) > 0.01) {
+                    this.trail.push({x: this.x, y: this.y, life: 1});
+                }
+
+                for (let i = this.trail.length - 1; i >= 0; i--) {
+                    this.trail[i].life -= 0.02;
+                    if (this.trail[i].life <= 0) {
+                        this.trail.splice(i, 1);
+                    }
+                }
+            }
+
+            draw() {
+                // Draw trail
+                for (let i = 0; i < this.trail.length; i++) {
+                    const t = this.trail[i];
+                    const pos = isoToScreen(t.x, t.y, 0.05);
+                    const alpha = Math.floor(t.life * 100);
+                    ctx.fillStyle = this.color + alpha.toString(16).padStart(2, '0');
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // Shadow
+                const shadowPos = isoToScreen(this.x, this.y, 0);
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.beginPath();
+                ctx.ellipse(shadowPos.x, shadowPos.y, 14, 7, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Marble
+                const pos = isoToScreen(this.x, this.y, this.z);
+                const gradient = ctx.createRadialGradient(
+                    pos.x - 6, pos.y - 6, 2,
+                    pos.x, pos.y, 18
+                );
+                gradient.addColorStop(0, '#ffffff');
+                gradient.addColorStop(0.4, this.color);
+                gradient.addColorStop(1, shadeColor(this.color, -30));
+
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, 18, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Highlight
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                ctx.beginPath();
+                ctx.arc(pos.x - 7, pos.y - 7, 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        class Domino {
+            constructor(x, y, rotation = 0) {
+                this.x = x;
+                this.y = y;
+                this.rotation = rotation;
+                this.fallen = false;
+                this.fallProgress = 0;
+                this.width = 0.15;
+                this.height = 0.6;
+                this.color = '#e17055';
+            }
+
+            update() {
+                if (this.fallen && this.fallProgress < 1) {
+                    this.fallProgress += 0.1;
+                }
+            }
+
+            checkCollision(marble) {
+                if (!this.fallen) {
+                    const dx = marble.x - this.x;
+                    const dy = marble.y - this.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist < marble.radius + this.width && Math.abs(marble.vx) + Math.abs(marble.vy) > 0.05) {
+                        this.fall();
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            fall() {
+                if (!this.fallen) {
+                    this.fallen = true;
+                    score += 10;
+                    combos++;
+                    updateHUD();
+                }
+            }
+
+            draw() {
+                ctx.save();
+                const pos = isoToScreen(this.x, this.y, 0);
+
+                if (this.fallen) {
+                    const angle = this.fallProgress * Math.PI / 2;
+                    const offset = Math.sin(angle) * 20;
+                    drawBox(this.x + offset * 0.02, this.y, 0.05, this.width * 2, this.height, 0.8 * (1 - this.fallProgress), this.color);
+                } else {
+                    drawBox(this.x, this.y, 0, this.width, this.width, 2.5, this.color);
+                }
+
+                ctx.restore();
+            }
+        }
+
+        class Bumper {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 0.5;
+                this.color = '#fd79a8';
+                this.pulse = 0;
+                this.hitTime = 0;
+            }
+
+            update() {
+                this.pulse += 0.1;
+                if (Date.now() - this.hitTime < 200) {
+                    // Recently hit
+                }
+            }
+
+            checkCollision(marble) {
+                const dx = marble.x - this.x;
+                const dy = marble.y - this.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < marble.radius + this.radius) {
+                    const angle = Math.atan2(dy, dx);
+                    const force = 0.3;
+                    marble.vx += Math.cos(angle) * force;
+                    marble.vy += Math.sin(angle) * force;
+                    this.hitTime = Date.now();
+                    score += 5;
+                    updateHUD();
+                    createParticles(this.x, this.y, this.color, 8);
+                    return true;
+                }
+                return false;
+            }
+
+            draw() {
+                const scale = Date.now() - this.hitTime < 200 ? 1.2 : 1 + Math.sin(this.pulse) * 0.1;
+                const pos = isoToScreen(this.x, this.y, 0.5);
+
+                // Shadow
+                const shadowPos = isoToScreen(this.x, this.y, 0);
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.beginPath();
+                ctx.ellipse(shadowPos.x, shadowPos.y, 18 * scale, 9 * scale, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Bumper
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, 22 * scale, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            }
+        }
+
+        class Gem {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.collected = false;
+                this.respawnTime = 0;
+                this.rotation = 0;
+                this.bounce = 0;
+                this.color = '#ffd700';
+            }
+
+            update() {
+                if (this.collected && Date.now() - this.respawnTime > 3000) {
+                    this.collected = false;
+                }
+                this.rotation += 0.05;
+                this.bounce = Math.sin(Date.now() * 0.003) * 0.15;
+            }
+
+            checkCollision(marble) {
+                if (!this.collected) {
+                    const dx = marble.x - this.x;
+                    const dy = marble.y - this.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist < marble.radius + 0.3) {
+                        this.collected = true;
+                        this.respawnTime = Date.now();
+                        score += 20;
+                        updateHUD();
+                        createParticles(this.x, this.y, this.color, 12);
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            draw() {
+                if (!this.collected) {
+                    const pos = isoToScreen(this.x, this.y, 0.5 + this.bounce);
+
+                    ctx.save();
+                    ctx.translate(pos.x, pos.y);
+                    ctx.rotate(this.rotation);
+
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = this.color;
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.moveTo(0, -12);
+                    ctx.lineTo(8, 0);
+                    ctx.lineTo(0, 12);
+                    ctx.lineTo(-8, 0);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+
+                    ctx.restore();
+                }
+            }
+        }
+
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.z = 0.5;
+                this.vx = (Math.random() - 0.5) * 0.3;
+                this.vy = (Math.random() - 0.5) * 0.3;
+                this.vz = Math.random() * 0.2;
+                this.color = color;
+                this.life = 1;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.z += this.vz;
+                this.vz -= 0.02;
+                this.life -= 0.03;
+            }
+
+            draw() {
+                if (this.z > 0) {
+                    const pos = isoToScreen(this.x, this.y, this.z);
+                    ctx.globalAlpha = this.life;
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                }
+            }
+        }
+
+        function createParticles(x, y, color, count) {
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle(x, y, color));
+            }
+        }
+
+        function initializeArena() {
+            // Add bumpers
+            bumpers = [
+                new Bumper(-3, -3),
+                new Bumper(3, -3),
+                new Bumper(-3, 3),
+                new Bumper(3, 3),
+                new Bumper(0, 0)
+            ];
+
+            // Add gems
+            gems = [
+                new Gem(-4, 0),
+                new Gem(4, 0),
+                new Gem(0, -4),
+                new Gem(0, 4),
+                new Gem(-2, -2),
+                new Gem(2, -2),
+                new Gem(-2, 2),
+                new Gem(2, 2)
+            ];
+
+            // Add initial dominoes
+            addDominoLine();
+        }
+
+        function addDominoLine() {
+            const startX = -4;
+            const startY = -1;
+            for (let i = 0; i < 8; i++) {
+                dominoes.push(new Domino(startX + i * 1.2, startY, 0));
+            }
+        }
+
+        function addMarble() {
+            const colors = ['#e74c3c', '#f39c12', '#2ecc71', '#9b59b6', '#1abc9c'];
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            const marble = new Marble(
+                Math.random() * 4 - 2,
+                Math.random() * 4 - 2,
+                color
+            );
+            marbles.push(marble);
+        }
+
+        function resetAll() {
+            dominoes = [];
+            marbles = [];
+            particles = [];
+            score = 0;
+            combos = 0;
+            playerMarble.x = 0;
+            playerMarble.y = 0;
+            playerMarble.vx = 0;
+            playerMarble.vy = 0;
+            playerMarble.trail = [];
+            initializeArena();
+            updateHUD();
+        }
+
+        function updateHUD() {
+            document.getElementById('score').textContent = score;
+            document.getElementById('combos').textContent = combos;
+        }
+
+        function updateTiltIndicator() {
+            const dot = document.getElementById('tiltDot');
+            const maxOffset = 45;
+            const x = tiltX * maxOffset;
+            const y = tiltY * maxOffset;
+            dot.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+        }
+
+        function updateGame() {
+            updateLoopCount++;
+
+            if (!gameRunning) {
+                console.log('updateGame called but gameRunning is false');
+                return;
+            }
+
+            // Update player
+            playerMarble.update(true);
+
+            // Debug log occasionally
+            if (updateLoopCount % 60 === 0) {
+                console.log('Update loop:', {
+                    count: updateLoopCount,
+                    tiltX: tiltX.toFixed(3),
+                    tiltY: tiltY.toFixed(3),
+                    marbleVX: playerMarble.vx.toFixed(3),
+                    marbleVY: playerMarble.vy.toFixed(3)
+                });
+            }
+
+            // Update other marbles
+            marbles.forEach(m => {
+                m.update(true);
+
+                // Marble to marble collision
+                const dx = playerMarble.x - m.x;
+                const dy = playerMarble.y - m.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < playerMarble.radius + m.radius) {
+                    const angle = Math.atan2(dy, dx);
+                    const force = 0.1;
+                    m.vx -= Math.cos(angle) * force;
+                    m.vy -= Math.sin(angle) * force;
+                    playerMarble.vx += Math.cos(angle) * force;
+                    playerMarble.vy += Math.sin(angle) * force;
+                }
+            });
+
+            // Update dominoes
+            dominoes.forEach(d => {
+                d.update();
+                d.checkCollision(playerMarble);
+                marbles.forEach(m => d.checkCollision(m));
+            });
+
+            // Update bumpers
+            bumpers.forEach(b => {
+                b.update();
+                b.checkCollision(playerMarble);
+                marbles.forEach(m => b.checkCollision(m));
+            });
+
+            // Update gems
+            gems.forEach(g => {
+                g.update();
+                g.checkCollision(playerMarble);
+            });
+
+            // Update particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update();
+                if (particles[i].life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+
+            updateTiltIndicator();
+        }
+
+        function drawArena() {
+            // Draw floor tiles
+            for (let x = arena.x; x < arena.x + arena.width; x++) {
+                for (let y = arena.y; y < arena.y + arena.height; y++) {
+                    const color = (x + y) % 2 === 0 ? '#ecf0f1' : '#bdc3c7';
+                    drawTile(x, y, 0, 1, 1, color, 'rgba(0,0,0,0.1)');
+                }
+            }
+
+            // Draw walls
+            const wallColor = '#95a5a6';
+            const wallHeight = 1.5;
+
+            // Bottom wall
+            for (let x = arena.x; x < arena.x + arena.width; x++) {
+                drawBox(x, arena.y + arena.height - 0.1, 0, 1, 0.2, wallHeight, wallColor);
+            }
+            // Top wall
+            for (let x = arena.x; x < arena.x + arena.width; x++) {
+                drawBox(x, arena.y - 0.1, 0, 1, 0.2, wallHeight, wallColor);
+            }
+            // Left wall
+            for (let y = arena.y; y < arena.y + arena.height; y++) {
+                drawBox(arena.x - 0.1, y, 0, 0.2, 1, wallHeight, wallColor);
+            }
+            // Right wall
+            for (let y = arena.y; y < arena.y + arena.height; y++) {
+                drawBox(arena.x + arena.width - 0.1, y, 0, 0.2, 1, wallHeight, wallColor);
+            }
+        }
+
+        function drawGame() {
+            // Clear
+            const gradient = ctx.createLinearGradient(0, 0, 0, height);
+            gradient.addColorStop(0, '#667eea');
+            gradient.addColorStop(1, '#764ba2');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw arena
+            drawArena();
+
+            // Sort all objects by isometric depth
+            const allObjects = [];
+
+            gems.forEach(g => allObjects.push({depth: g.x + g.y, obj: g, type: 'gem'}));
+            bumpers.forEach(b => allObjects.push({depth: b.x + b.y, obj: b, type: 'bumper'}));
+            dominoes.forEach(d => allObjects.push({depth: d.x + d.y, obj: d, type: 'domino'}));
+            marbles.forEach(m => allObjects.push({depth: m.x + m.y + m.z, obj: m, type: 'marble'}));
+            allObjects.push({depth: playerMarble.x + playerMarble.y + playerMarble.z, obj: playerMarble, type: 'player'});
+            particles.forEach(p => allObjects.push({depth: p.x + p.y + p.z, obj: p, type: 'particle'}));
+
+            allObjects.sort((a, b) => a.depth - b.depth);
+
+            allObjects.forEach(item => {
+                item.obj.draw();
+            });
+
+            requestAnimationFrame(drawGame);
+        }
+
+        function handleOrientation(event) {
+            orientationEventCount++;
+
+            if (event.beta !== null && event.gamma !== null) {
+                // Convert device orientation to tilt
+                // gamma: left-right tilt (-90 to 90)
+                // beta: front-back tilt (-180 to 180)
+
+                // Adjust for portrait mode
+                let adjustedGamma = event.gamma;
+                let adjustedBeta = event.beta;
+
+                // Handle device in portrait orientation
+                if (Math.abs(event.gamma) < 45) {
+                    tiltX = adjustedGamma / 45;  // More sensitive
+                    tiltY = (adjustedBeta - 45) / 45;  // Offset by 45 for portrait
+                } else {
+                    // Landscape mode
+                    tiltX = adjustedGamma / 45;
+                    tiltY = adjustedBeta / 45;
+                }
+
+                tiltX = Math.max(-1, Math.min(1, tiltX));
+                tiltY = Math.max(-1, Math.min(1, tiltY));
+            }
+
+            // Update debug display (after calculating tilt values)
+            const debugInfo = document.getElementById('debugInfo');
+            if (debugInfo) {
+                debugInfo.innerHTML = `
+                    Gamma: ${event.gamma ? event.gamma.toFixed(1) : 'null'}<br>
+                    Beta: ${event.beta ? event.beta.toFixed(1) : 'null'}<br>
+                    TiltX: ${tiltX.toFixed(2)}<br>
+                    TiltY: ${tiltY.toFixed(2)}<br>
+                    Running: ${gameRunning ? 'YES' : 'NO'}<br>
+                    Updates: ${updateLoopCount}<br>
+                    MX: ${playerMarble.x.toFixed(2)}<br>
+                    MY: ${playerMarble.y.toFixed(2)}<br>
+                    VX: ${playerMarble.vx.toFixed(3)}<br>
+                    VY: ${playerMarble.vy.toFixed(3)}
+                `;
+            }
+
+            // Also update the tilt indicator in real-time
+            updateTiltIndicator();
+        }
+
+        async function requestSensorPermission() {
+            console.log('Requesting sensor permission...');
+
+            if (typeof DeviceOrientationEvent !== 'undefined' &&
+                typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const permission = await DeviceOrientationEvent.requestPermission();
+                    console.log('Permission result:', permission);
+                    if (permission === 'granted') {
+                        window.addEventListener('deviceorientation', handleOrientation, true);
+                        console.log('Device orientation listener added (iOS)');
+                    } else {
+                        console.log('Permission denied');
+                    }
+                } catch (error) {
+                    console.error('Error requesting sensor permission:', error);
+                    // Try adding listener anyway
+                    window.addEventListener('deviceorientation', handleOrientation, true);
+                }
+            } else {
+                // Android and other devices
+                console.log('Direct sensor access (Android)');
+                window.addEventListener('deviceorientation', handleOrientation, true);
+
+                // Test if it's working
+                setTimeout(() => {
+                    console.log('Current tilt values:', {tiltX, tiltY});
+                }, 2000);
+            }
+        }
+
+        // Event listeners
+        document.getElementById('startBtn').addEventListener('click', async () => {
+            await requestSensorPermission();
+            document.getElementById('startScreen').classList.add('hidden');
+            initializeArena();
+            gameRunning = true;
+            setInterval(updateGame, 1000 / 60);
+            drawGame();
+        });
+
+        document.getElementById('addDominoBtn').addEventListener('click', addDominoLine);
+        document.getElementById('addMarbleBtn').addEventListener('click', addMarble);
+        document.getElementById('resetBtn').addEventListener('click', resetAll);
+        document.getElementById('helpBtn').addEventListener('click', () => {
+            document.getElementById('instructions').classList.remove('hidden');
+        });
+
+        // Desktop controls
+        window.addEventListener('keydown', (e) => {
+            if (!gameRunning) return;
+            const speed = 0.5;
+            if (e.key === 'ArrowLeft') tiltX = -speed;
+            else if (e.key === 'ArrowRight') tiltX = speed;
+            else if (e.key === 'ArrowUp') tiltY = -speed;
+            else if (e.key === 'ArrowDown') tiltY = speed;
+            else if (e.key === 'd') addDominoLine();
+            else if (e.key === 'm') addMarble();
+            else if (e.key === 'r') resetAll();
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.key.startsWith('Arrow')) {
+                tiltX = 0;
+                tiltY = 0;
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        });
+    </script>
+</body>
+</html>

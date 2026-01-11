@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Marble Chase</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            touch-action: none;
+        }
+
+        body {
+            overflow: hidden;
+            font-family: 'Arial', sans-serif;
+            background: #000;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #hud {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .stat {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 15px;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .stat-label {
+            font-size: 11px;
+            opacity: 0.8;
+            margin-bottom: 3px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            color: #00ff88;
+        }
+
+        #lives {
+            color: #ff4757;
+        }
+
+        #startScreen {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 100;
+        }
+
+        #startScreen h1 {
+            font-size: 48px;
+            color: #00ff88;
+            text-shadow: 0 0 20px #00ff88, 0 0 40px #00ff88;
+            margin-bottom: 20px;
+        }
+
+        #startScreen p {
+            color: white;
+            font-size: 18px;
+            margin-bottom: 30px;
+        }
+
+        .btn {
+            padding: 15px 40px;
+            background: linear-gradient(135deg, #00ff88, #00d9ff);
+            border: none;
+            border-radius: 25px;
+            color: #000;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            pointer-events: all;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        #gameOver {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 40px;
+            border-radius: 20px;
+            border: 3px solid #00ff88;
+            text-align: center;
+            color: white;
+            z-index: 100;
+            box-shadow: 0 0 40px rgba(0, 255, 136, 0.5);
+        }
+
+        #gameOver h1 {
+            font-size: 42px;
+            color: #ff4757;
+            margin-bottom: 20px;
+            text-shadow: 0 0 20px #ff4757;
+        }
+
+        #gameOver .score {
+            font-size: 32px;
+            color: #00ff88;
+            margin: 20px 0;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        #instructions {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px 25px;
+            border-radius: 20px;
+            color: white;
+            font-size: 14px;
+            text-align: center;
+            z-index: 10;
+            pointer-events: none;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="hud">
+        <div class="stat">
+            <div class="stat-label">SCORE</div>
+            <div class="stat-value" id="score">0</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">LIVES</div>
+            <div class="stat-value" id="lives">💙💙💙</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">GEMS</div>
+            <div class="stat-value" id="gems">0</div>
+        </div>
+    </div>
+
+    <div id="instructions">
+        Tilt to move • Collect gems • Avoid black holes
+    </div>
+
+    <div id="startScreen">
+        <h1>MARBLE CHASE</h1>
+        <p>Tilt your device to navigate<br>Collect gems, avoid black holes!</p>
+        <button class="btn" id="startBtn">START</button>
+    </div>
+
+    <div id="gameOver" class="hidden">
+        <h1>GAME OVER</h1>
+        <div class="score">Score: <span id="finalScore">0</span></div>
+        <div class="score">Gems: <span id="finalGems">0</span></div>
+        <button class="btn" id="restartBtn">PLAY AGAIN</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+
+        // Game state
+        let gameRunning = false;
+        let score = 0;
+        let lives = 3;
+        let gemsCollected = 0;
+        let tiltX = 0;
+        let tiltY = 0;
+        let calibrationGamma = 0;
+        let calibrationBeta = 45;
+
+        // Camera and player
+        const player = {
+            x: 0,
+            y: 0,
+            vx: 0,
+            vy: 0,
+            radius: 20,
+            speed: 0.15,
+            maxSpeed: 4,
+            angle: 0
+        };
+
+        const camera = {
+            x: 0,
+            y: 0,
+            distance: 150,
+            height: 100
+        };
+
+        // Game objects
+        let gems = [];
+        let obstacles = [];
+        let speedBoosts = [];
+        let holes = [];
+        let particles = [];
+
+        // Spawn timers
+        let spawnTimer = 0;
+
+        // Convert world coordinates to screen coordinates with perspective
+        function worldToScreen(x, y) {
+            // Camera-relative position
+            const relX = x - camera.x;
+            const relY = y - camera.y;
+
+            // Apply perspective
+            const perspective = 1 - (relY / 800);
+            const scale = Math.max(0.3, perspective);
+
+            const screenX = width / 2 + (relX * scale);
+            const screenY = height * 0.7 - (relY * scale * 0.5);
+
+            return { x: screenX, y: screenY, scale: scale };
+        }
+
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 5;
+                this.vy = (Math.random() - 0.5) * 5;
+                this.life = 1;
+                this.color = color;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life -= 0.02;
+            }
+
+            draw() {
+                const pos = worldToScreen(this.x, this.y);
+                if (pos.scale > 0.1) {
+                    ctx.globalAlpha = this.life;
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, 4 * pos.scale, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                }
+            }
+        }
+
+        class Gem {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.collected = false;
+                this.rotation = 0;
+                this.bounce = 0;
+            }
+
+            update() {
+                this.rotation += 0.1;
+                this.bounce = Math.sin(Date.now() * 0.005) * 5;
+            }
+
+            draw() {
+                if (this.collected) return;
+
+                const pos = worldToScreen(this.x, this.y);
+                if (pos.scale < 0.1) return;
+
+                const size = 15 * pos.scale;
+
+                ctx.save();
+                ctx.translate(pos.x, pos.y - this.bounce * pos.scale);
+                ctx.rotate(this.rotation);
+
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = '#ffd700';
+                ctx.fillStyle = '#ffd700';
+                ctx.beginPath();
+                ctx.moveTo(0, -size);
+                ctx.lineTo(size * 0.6, 0);
+                ctx.lineTo(0, size);
+                ctx.lineTo(-size * 0.6, 0);
+                ctx.closePath();
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                ctx.restore();
+            }
+
+            checkCollision(player) {
+                if (this.collected) return false;
+                const dist = Math.hypot(player.x - this.x, player.y - this.y);
+                if (dist < player.radius + 15) {
+                    this.collected = true;
+                    score += 50;
+                    gemsCollected++;
+                    createParticles(this.x, this.y, '#ffd700', 15);
+                    return true;
+                }
+                return false;
+            }
+        }
+
+        class Obstacle {
+            constructor(x, y, type = 'static') {
+                this.x = x;
+                this.y = y;
+                this.radius = 25;
+                this.type = type;
+                this.moveAngle = Math.random() * Math.PI * 2;
+                this.moveSpeed = 1;
+                this.pulse = 0;
+            }
+
+            update() {
+                this.pulse += 0.1;
+
+                if (this.type === 'moving') {
+                    this.x += Math.cos(this.moveAngle) * this.moveSpeed;
+                    this.y += Math.sin(this.moveAngle) * this.moveSpeed;
+
+                    // Bounce in area
+                    if (Math.abs(this.x - player.x) > 400) this.moveAngle = Math.PI - this.moveAngle;
+                    if (Math.abs(this.y - player.y) > 400) this.moveAngle = -this.moveAngle;
+                }
+            }
+
+            draw() {
+                const pos = worldToScreen(this.x, this.y);
+                if (pos.scale < 0.1) return;
+
+                const size = (this.radius + Math.sin(this.pulse) * 3) * pos.scale;
+
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#ff4757';
+                ctx.fillStyle = '#ff4757';
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, size, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#ff6b81';
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, size * 0.6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+
+            checkCollision(player) {
+                const dist = Math.hypot(player.x - this.x, player.y - this.y);
+                return dist < player.radius + this.radius;
+            }
+        }
+
+        class SpeedBoost {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 20;
+                this.used = false;
+                this.pulse = 0;
+            }
+
+            update() {
+                this.pulse += 0.15;
+            }
+
+            draw() {
+                if (this.used) return;
+
+                const pos = worldToScreen(this.x, this.y);
+                if (pos.scale < 0.1) return;
+
+                const size = (this.radius + Math.sin(this.pulse) * 5) * pos.scale;
+
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#00d9ff';
+                ctx.fillStyle = '#00d9ff';
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, size, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#fff';
+                ctx.font = `bold ${20 * pos.scale}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('⚡', pos.x, pos.y);
+                ctx.shadowBlur = 0;
+            }
+
+            checkCollision(player) {
+                if (this.used) return false;
+                const dist = Math.hypot(player.x - this.x, player.y - this.y);
+                if (dist < player.radius + this.radius) {
+                    this.used = true;
+                    player.vx *= 2;
+                    player.vy *= 2;
+                    score += 25;
+                    createParticles(this.x, this.y, '#00d9ff', 20);
+                    return true;
+                }
+                return false;
+            }
+        }
+
+        class Hole {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 30;
+            }
+
+            draw() {
+                const pos = worldToScreen(this.x, this.y);
+                if (pos.scale < 0.1) return;
+
+                const size = this.radius * pos.scale;
+
+                // Black hole effect
+                const gradient = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, size);
+                gradient.addColorStop(0, '#000');
+                gradient.addColorStop(0.7, '#1a1a1a');
+                gradient.addColorStop(1, '#333');
+
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            checkCollision(player) {
+                const dist = Math.hypot(player.x - this.x, player.y - this.y);
+                return dist < this.radius;
+            }
+        }
+
+        function createParticles(x, y, color, count) {
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle(x, y, color));
+            }
+        }
+
+        function spawnObjects() {
+            spawnTimer++;
+
+            // Spawn gems
+            if (spawnTimer % 40 === 0) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 300 + Math.random() * 300;
+                gems.push(new Gem(
+                    player.x + Math.cos(angle) * dist,
+                    player.y + Math.sin(angle) * dist
+                ));
+            }
+
+            // Spawn speed boosts
+            if (spawnTimer % 120 === 0) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 350 + Math.random() * 250;
+                speedBoosts.push(new SpeedBoost(
+                    player.x + Math.cos(angle) * dist,
+                    player.y + Math.sin(angle) * dist
+                ));
+            }
+
+            // Spawn holes
+            if (spawnTimer % 150 === 0) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 300 + Math.random() * 300;
+                holes.push(new Hole(
+                    player.x + Math.cos(angle) * dist,
+                    player.y + Math.sin(angle) * dist
+                ));
+            }
+        }
+
+        function updatePlayer() {
+            // Apply tilt forces
+            player.vx += tiltX * player.speed;
+            player.vy += tiltY * player.speed;
+
+            // Limit speed
+            const speed = Math.hypot(player.vx, player.vy);
+            if (speed > player.maxSpeed) {
+                player.vx = (player.vx / speed) * player.maxSpeed;
+                player.vy = (player.vy / speed) * player.maxSpeed;
+            }
+
+            // Friction
+            player.vx *= 0.97;
+            player.vy *= 0.97;
+
+            // Update position
+            player.x += player.vx;
+            player.y += player.vy;
+
+            // Update angle based on velocity
+            if (Math.abs(player.vx) > 0.1 || Math.abs(player.vy) > 0.1) {
+                player.angle = Math.atan2(player.vy, player.vx);
+            }
+
+            // Passive score
+            score += Math.floor(speed / 10);
+        }
+
+        function updateCamera() {
+            // Camera follows player smoothly
+            camera.x += (player.x - camera.x) * 0.1;
+            camera.y += (player.y - camera.y - camera.distance) * 0.1;
+        }
+
+        function updateGame() {
+            if (!gameRunning) return;
+
+            updatePlayer();
+            updateCamera();
+            spawnObjects();
+
+            // Update gems
+            gems.forEach(g => {
+                g.update();
+                g.checkCollision(player);
+            });
+
+            // Update speed boosts
+            speedBoosts.forEach(s => {
+                s.update();
+                s.checkCollision(player);
+            });
+
+            // Update holes
+            for (let i = holes.length - 1; i >= 0; i--) {
+                if (holes[i].checkCollision(player)) {
+                    lives--;
+                    createParticles(player.x, player.y, '#000', 30);
+                    player.x = camera.x;
+                    player.y = camera.y;
+                    player.vx = 0;
+                    player.vy = 0;
+                    holes.splice(i, 1);
+                    updateHUD();
+
+                    if (lives <= 0) {
+                        gameOver();
+                        return;
+                    }
+                }
+            }
+
+            // Update particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update();
+                if (particles[i].life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+
+            // Clean up distant objects
+            gems = gems.filter(g => g.collected || Math.hypot(g.x - player.x, g.y - player.y) < 1000);
+            speedBoosts = speedBoosts.filter(s => !s.used && Math.hypot(s.x - player.x, s.y - player.y) < 1000);
+            holes = holes.filter(h => Math.hypot(h.x - player.x, h.y - player.y) < 1000);
+
+            if (Math.random() < 0.02) updateHUD();
+        }
+
+        function drawGround() {
+            // Gradient background (sky to horizon)
+            const gradient = ctx.createLinearGradient(0, 0, 0, height);
+            gradient.addColorStop(0, '#1a1a2e');
+            gradient.addColorStop(0.6, '#16213e');
+            gradient.addColorStop(1, '#0f3460');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw grid
+            ctx.strokeStyle = 'rgba(0, 255, 136, 0.2)';
+            ctx.lineWidth = 2;
+
+            const gridSize = 100;
+            const startX = Math.floor((camera.x - 500) / gridSize) * gridSize;
+            const startY = Math.floor((camera.y - 500) / gridSize) * gridSize;
+
+            for (let x = startX; x < camera.x + 500; x += gridSize) {
+                for (let y = startY; y < camera.y + 800; y += gridSize) {
+                    const p1 = worldToScreen(x, y);
+                    const p2 = worldToScreen(x + gridSize, y);
+                    const p3 = worldToScreen(x, y + gridSize);
+
+                    if (p1.scale > 0.1) {
+                        ctx.globalAlpha = p1.scale * 0.5;
+                        ctx.beginPath();
+                        ctx.moveTo(p1.x, p1.y);
+                        ctx.lineTo(p2.x, p2.y);
+                        ctx.stroke();
+
+                        ctx.beginPath();
+                        ctx.moveTo(p1.x, p1.y);
+                        ctx.lineTo(p3.x, p3.y);
+                        ctx.stroke();
+                        ctx.globalAlpha = 1;
+                    }
+                }
+            }
+        }
+
+        function drawPlayer() {
+            const pos = worldToScreen(player.x, player.y);
+            const size = player.radius * pos.scale;
+
+            // Shadow
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+            ctx.beginPath();
+            ctx.ellipse(pos.x, pos.y + 5, size * 1.2, size * 0.6, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Marble
+            const gradient = ctx.createRadialGradient(
+                pos.x - size * 0.3, pos.y - size * 0.3, size * 0.2,
+                pos.x, pos.y, size
+            );
+            gradient.addColorStop(0, '#fff');
+            gradient.addColorStop(0.4, '#00ff88');
+            gradient.addColorStop(1, '#00aa66');
+
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, size, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Highlight
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.beginPath();
+            ctx.arc(pos.x - size * 0.4, pos.y - size * 0.4, size * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Direction indicator
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+            ctx.lineTo(
+                pos.x + Math.cos(player.angle) * size * 1.5,
+                pos.y + Math.sin(player.angle) * size * 1.5
+            );
+            ctx.stroke();
+        }
+
+        function drawGame() {
+            drawGround();
+
+            // Sort all objects by distance from camera for proper rendering
+            const allObjects = [];
+
+            holes.forEach(h => allObjects.push({ obj: h, dist: h.y }));
+            gems.forEach(g => allObjects.push({ obj: g, dist: g.y }));
+            speedBoosts.forEach(s => allObjects.push({ obj: s, dist: s.y }));
+            allObjects.push({ obj: { draw: drawPlayer }, dist: player.y });
+            particles.forEach(p => allObjects.push({ obj: p, dist: p.y }));
+
+            allObjects.sort((a, b) => a.dist - b.dist);
+
+            allObjects.forEach(item => item.obj.draw());
+
+            requestAnimationFrame(drawGame);
+        }
+
+        function updateHUD() {
+            document.getElementById('score').textContent = score;
+            document.getElementById('lives').textContent = '💙'.repeat(lives);
+            document.getElementById('gems').textContent = gemsCollected;
+        }
+
+        function gameOver() {
+            gameRunning = false;
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('finalGems').textContent = gemsCollected;
+            document.getElementById('gameOver').classList.remove('hidden');
+        }
+
+        function startGame() {
+            gameRunning = true;
+            score = 0;
+            lives = 3;
+            gemsCollected = 0;
+            spawnTimer = 0;
+
+            player.x = 0;
+            player.y = 0;
+            player.vx = 0;
+            player.vy = 0;
+
+            camera.x = 0;
+            camera.y = -camera.distance;
+
+            gems = [];
+            obstacles = [];
+            speedBoosts = [];
+            holes = [];
+            particles = [];
+
+            updateHUD();
+
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('gameOver').classList.add('hidden');
+
+            setInterval(updateGame, 1000 / 60);
+            drawGame();
+        }
+
+        function handleOrientation(event) {
+            if (event.beta !== null && event.gamma !== null) {
+                // Store calibration on first read
+                if (!gameRunning) {
+                    calibrationGamma = event.gamma;
+                    calibrationBeta = event.beta;
+                    return;
+                }
+
+                // Map device tilt to movement direction, using calibration offsets
+                tiltX = (event.gamma - calibrationGamma) / 35;
+                tiltY = -((event.beta - calibrationBeta) / 35); // Negated for intuitive forward/back
+
+                tiltX = Math.max(-1, Math.min(1, tiltX));
+                tiltY = Math.max(-1, Math.min(1, tiltY));
+            }
+        }
+
+        async function requestSensorPermission() {
+            if (typeof DeviceOrientationEvent !== 'undefined' &&
+                typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const permission = await DeviceOrientationEvent.requestPermission();
+                    if (permission === 'granted') {
+                        window.addEventListener('deviceorientation', handleOrientation, true);
+                    }
+                } catch (error) {
+                    console.error('Error requesting sensor permission:', error);
+                }
+            } else {
+                window.addEventListener('deviceorientation', handleOrientation, true);
+            }
+        }
+
+        // Event listeners
+        document.getElementById('startBtn').addEventListener('click', async () => {
+            await requestSensorPermission();
+            startGame();
+        });
+
+        document.getElementById('restartBtn').addEventListener('click', () => {
+            startGame();
+        });
+
+        // Desktop controls (for testing)
+        window.addEventListener('keydown', (e) => {
+            if (!gameRunning) return;
+            if (e.key === 'ArrowLeft') tiltX = -1;
+            else if (e.key === 'ArrowRight') tiltX = 1;
+            else if (e.key === 'ArrowUp') tiltY = -1;
+            else if (e.key === 'ArrowDown') tiltY = 1;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.key.startsWith('Arrow')) {
+                tiltX = 0;
+                tiltY = 0;
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        });
+    </script>
+</body>
+</html>
